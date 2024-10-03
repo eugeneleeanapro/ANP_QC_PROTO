@@ -8,8 +8,8 @@ SFTP_HOST = 'localhost'
 SFTP_PORT = 22
 SFTP_USERNAME = 'root'
 SFTP_PASSWORD = 'mysql'
-REMOTE_FILE_PATH = r"C:\Users\johns\Desktop\designated\dummy data.csv"  # Use raw string for Windows path
-LOCAL_FILE_PATH = r"C:\Users\johns\Desktop\designated\dummy data.csv"  # Ensure correct local path
+REMOTE_FILE_PATH = ""  # Use raw string for Windows path
+LOCAL_FILE_PATH = ""  # Ensure correct local path
 
 # Database connection configuration
 db_config = {
