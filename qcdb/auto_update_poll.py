@@ -55,7 +55,7 @@ def update_database_from_csv(csv_file_path):
 
             print(f"Found {len(new_rows)} new rows to process.")
 
-            # SQL query for the icp table
+            # SQL query for the every tables
             insert_icp_records = '''
                 INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -63,6 +63,36 @@ def update_database_from_csv(csv_file_path):
                                        Cr = VALUES(Cr), Cu = VALUES(Cu), Zr = VALUES(Zr), 
                                        Fe = VALUES(Fe), Na = VALUES(Na), Ni = VALUES(Ni), 
                                        Zn = VALUES(Zn), Co = VALUES(Co)
+            '''
+            insert_solid_content_records = '''
+                INSERT INTO solid_content (lot_number, status, solid_content)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content)
+            '''
+            insert_particle_size_records = '''
+                INSERT INTO particle_size (lot_number, status, particle_size)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE particle_size = VALUES(particle_size)
+            '''
+            insert_viscosity_records = '''
+                INSERT INTO viscosity (lot_number, status, viscosity)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE viscosity = VALUES(viscosity)
+            '''
+            insert_moisture_records = '''
+                INSERT INTO moisture (lot_number, status, moisture)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE moisture = VALUES(moisture)
+            '''
+            insert_electrical_resistance_records = '''
+                INSERT INTO electrical_resistance (lot_number, status, electrical_resistance)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE electrical_resistance = VALUES(electrical_resistance)
+            '''
+            insert_magnetic_impurity_records = '''
+                INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE magnetic_impurity = VALUES(magnetic_impurity)
             '''
 
             # Insert each new row into the database
@@ -72,7 +102,13 @@ def update_database_from_csv(csv_file_path):
                     continue
 
                 lot_number = row[0]
-                values = row[7:18]
+                solid_content_value = row[1]
+                particle_size_value = row[2]
+                viscosity_value = row[3]
+                moisture_value = row[4]
+                electrical_resistance_value = row[5]
+                magnetic_impurity_value = row[6]
+                icp_values = row[7:18]
                 status = 'Pass'
 
                 # Ensure lot_number is in 'lots' table
@@ -80,7 +116,15 @@ def update_database_from_csv(csv_file_path):
 
                 # Insert into the ICP table
                 try:
-                    cursor.execute(insert_icp_records, (lot_number, status, *values))
+                    # Insert each data type into its respective table
+                    cursor.execute(insert_icp_records, (lot_number, status, *icp_values))
+                    cursor.execute(insert_solid_content_records, (lot_number, status, solid_content_value))
+                    cursor.execute(insert_particle_size_records, (lot_number, status, particle_size_value))
+                    cursor.execute(insert_viscosity_records, (lot_number, status, viscosity_value))
+                    cursor.execute(insert_moisture_records, (lot_number, status, moisture_value))
+                    cursor.execute(insert_electrical_resistance_records, (lot_number, status, electrical_resistance_value))
+                    cursor.execute(insert_magnetic_impurity_records, (lot_number, status, magnetic_impurity_value))
+
                     print(f"Inserted data for lot_number {lot_number} into the ICP table.")
                 except mysql.connector.Error as err:
                     print(f"Error inserting ICP data for {lot_number}: {err}")
