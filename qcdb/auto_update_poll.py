@@ -1,6 +1,5 @@
 import csv
 import mysql.connector
-import os
 import time
 from datetime import datetime, timedelta
 
@@ -38,8 +37,8 @@ def update_database_from_csv(csv_file_path):
         cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
         result = cursor.fetchone()
         if not result:
-            print(f"Inserting lot_number: {lot_number} into lots table.")
             cursor.execute("INSERT INTO lots (lot_number, production_date) VALUES (%s, CURDATE())", (lot_number,))
+            print(f"Inserted new lot_number {lot_number} into lots table.")
 
     try:
         with open(csv_file_path, 'r') as file:
@@ -47,15 +46,15 @@ def update_database_from_csv(csv_file_path):
             headers = contents[0]  # First row is the header
             print(f"CSV Headers Detected: {headers}")
 
-            # Check if there are new rows since the last processed row
-            new_rows = contents[last_processed_row + 1:]  # Skip header and previously processed rows
+            # Get rows after the last processed one
+            new_rows = contents[last_processed_row + 1:]
             if not new_rows:
                 print("No new rows to process.")
-                return  # Exit if there are no new rows
+                return
 
             print(f"Found {len(new_rows)} new rows to process.")
 
-            # SQL query for the every tables
+            # SQL queries for each table
             insert_icp_records = '''
                 INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -98,7 +97,7 @@ def update_database_from_csv(csv_file_path):
             # Insert each new row into the database
             for index, row in enumerate(new_rows, start=last_processed_row + 1):
                 if len(row) < 18:
-                    print(f"Skipping incomplete or invalid row: {row}")
+                    print(f"Skipping incomplete row: {row}")
                     continue
 
                 lot_number = row[0]
@@ -111,12 +110,11 @@ def update_database_from_csv(csv_file_path):
                 icp_values = row[7:18]
                 status = 'Pass'
 
-                # Ensure lot_number is in 'lots' table
+                # Ensure lot_number exists in 'lots' table
                 check_or_insert_lot(lot_number)
 
-                # Insert into the ICP table
+                # Insert into tables
                 try:
-                    # Insert each data type into its respective table
                     cursor.execute(insert_icp_records, (lot_number, status, *icp_values))
                     cursor.execute(insert_solid_content_records, (lot_number, status, solid_content_value))
                     cursor.execute(insert_particle_size_records, (lot_number, status, particle_size_value))
@@ -125,9 +123,9 @@ def update_database_from_csv(csv_file_path):
                     cursor.execute(insert_electrical_resistance_records, (lot_number, status, electrical_resistance_value))
                     cursor.execute(insert_magnetic_impurity_records, (lot_number, status, magnetic_impurity_value))
 
-                    print(f"Inserted data for lot_number {lot_number} into the ICP table.")
+                    print(f"Inserted data for lot_number {lot_number} into respective tables.")
                 except mysql.connector.Error as err:
-                    print(f"Error inserting ICP data for {lot_number}: {err}")
+                    print(f"Error inserting data for lot_number {lot_number}: {err}")
 
                 # Update last processed row after each successful insert
                 last_processed_row = index
@@ -135,41 +133,26 @@ def update_database_from_csv(csv_file_path):
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
-        # Commit changes and close the connection
         connection.commit()
         connection.close()
         print("Database update completed.")
 
-# Function to check the CSV file at the top of every hour
+# Poll for changes every hour
 def poll_for_changes_every_hour(csv_file_path):
     global last_processed_row
-
     while True:
-        try:
-            # Get current time and calculate the next exact hour
-            now = datetime.now()
-            next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-            sleep_duration = (next_hour - now).total_seconds()
+        now = datetime.now()
+        next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        sleep_duration = (next_hour - now).total_seconds()
+        print(f"Sleeping until next hour update at: {next_hour.strftime('%H:%M:%S')}")
+        time.sleep(sleep_duration)
 
-            # Sleep until the top of the next hour
-            print(f"Sleeping until next hour update at: {next_hour.strftime('%H:%M:%S')}")
-            time.sleep(sleep_duration)
+        previous_row_count = last_processed_row
+        update_database_from_csv(csv_file_path)
+        if last_processed_row > previous_row_count:
+            print(f"Database updated with new rows up to row {last_processed_row}.")
+        else:
+            print("No new data found. Update skipped.")
 
-            # Check if new data exists and only update if there are new rows
-            previous_row_count = last_processed_row
-            update_database_from_csv(csv_file_path)
-
-            # Only update the database if there are new rows
-            if last_processed_row > previous_row_count:
-                print(f"Database was updated with new rows up to row {last_processed_row}.")
-            else:
-                print("No new data found. Database update skipped.")
-
-        except Exception as e:
-            print(f"Error in hourly polling loop: {e}")
-
-# Specify the CSV file path
 csv_file_path = 'C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv'
-
-# Start polling the CSV file every hour exactly at the top of the hour
 poll_for_changes_every_hour(csv_file_path)
