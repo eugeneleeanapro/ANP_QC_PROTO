@@ -32,7 +32,7 @@ def fetch_new_qc_data():
 # Send QC data to Fishbowl
 def send_to_fishbowl(data):
     # Fishbowl API endpoint
-    fishbowl_url = 'http://localhost/phpmyadmin/index.php?route=/database/structure&db=qcdb'  # Example Fishbowl API endpoint
+    fishbowl_url = 'http://localhost/phpmyadmin/index.php?route=/sql&db=qcdb&table=particle_size&pos=0'  # Example Fishbowl API endpoint
 
     # Send each data entry to Fishbowl
     headers = {
