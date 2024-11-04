@@ -27,7 +27,7 @@ class DBToFishbowl:
         payload = {
             "username": "admin",
             "password": "admin",
-            "name": "QC Database Integration",      # Integrated App Name in Fishbowl
+            "name": "QC Database Integration",       # Integrated App Name in Fishbowl
             "appKey": "YourGeneratedAppKey"          # Replace with the appKey from Fishbowl
         }
         headers = {'Content-Type': 'application/json'}
