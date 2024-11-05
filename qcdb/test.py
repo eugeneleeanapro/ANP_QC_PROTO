@@ -1,4 +1,6 @@
 import csv
+import requests
+
 
 # Path to your CSV file
 csv_file_path = 'C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv'
@@ -34,12 +36,12 @@ def update_csv_to_fishbowl():
     # Handling the response
     # if response.ok:
     #     print("Request successful!")
-    #     print("Response:", response.json())
+    # #     print("Response:", response.json())
     # else:
     #     print("Request failed!")
     #     print("Status Code:", response.status_code)
     #     print("Response Text:", response.text)
-    #{URL}}/api/import/:name
+    # {URL}}/api/import/:name
 
 # Path to your CSV file
 csv_file_path = 'C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv'
@@ -53,3 +55,5 @@ def csv_to_list_of_lists(csv_file_path):
 
 # Call the function and store the result
 csv_data = csv_to_list_of_lists(csv_file_path)
+
+#app key, app name, header of api, coa test result path, app route, fishbowl url - cloud and localhost 필요합니당

@@ -33,11 +33,11 @@ def update_database_from_csv(csv_file_path):
     cursor = connection.cursor()
 
     # Function to check if a lot exists in the 'lots' table, insert if not
-    def check_or_insert_lot(lot_number):
+    def check_or_insert_lot(lot_number, product):
         cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
         result = cursor.fetchone()
         if not result:
-            cursor.execute("INSERT INTO lots (lot_number, production_date) VALUES (%s, CURDATE())", (lot_number,))
+            cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
             print(f"Inserted new lot_number {lot_number} into lots table.")
 
     try:
@@ -68,6 +68,11 @@ def update_database_from_csv(csv_file_path):
                 VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content)
             '''
+            insert_cnt_content_records = '''
+                INSERT INTO cnt_content (lot_number, status, cnt_content)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE cnt_content = VALUES(cnt_content)
+            '''
             insert_particle_size_records = '''
                 INSERT INTO particle_size (lot_number, status, particle_size)
                 VALUES (%s, %s, %s)
@@ -89,40 +94,48 @@ def update_database_from_csv(csv_file_path):
                 ON DUPLICATE KEY UPDATE electrical_resistance = VALUES(electrical_resistance)
             '''
             insert_magnetic_impurity_records = '''
-                INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE magnetic_impurity = VALUES(magnetic_impurity)
+                INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE magnetic_impurity_sum = VALUES(magnetic_impurity_sum),
+                                        mag_Cr = VALUES(mag_Cr), mag_Fe = VALUES(mag_Fe),
+                                        mag_Ni = VALUES(mag_Ni), mag_Zn = VALUES(mag_Zn)
             '''
 
             # Insert each new row into the database
             for index, row in enumerate(new_rows, start=last_processed_row + 1):
-                if len(row) < 18:
+                if len(row) < 24:
                     print(f"Skipping incomplete row: {row}")
                     continue
 
                 lot_number = row[0]
-                solid_content_value = row[1]
-                particle_size_value = row[2]
-                viscosity_value = row[3]
-                moisture_value = row[4]
-                electrical_resistance_value = row[5]
-                magnetic_impurity_value = row[6]
-                icp_values = row[7:18]
+                product = row[1]
+                solid_content_value = row[2]
+                cnt_content_value = row[3]
+                particle_size_value = row[4]
+                viscosity_value = row[5]
+                moisture_value = row[6]
+                electrical_resistance_value = row[7]
+                magnetic_impurity_sum = row[8]
+                mag_Cr = row[9]
+                mag_Fe = row[10]
+                mag_Ni = row[11]
+                mag_Zn = row[12]
+                icp_values = row[13:24]  # Adjusted index based on the new structure
                 status = 'Pass'
 
                 # Ensure lot_number exists in 'lots' table
-                check_or_insert_lot(lot_number)
+                check_or_insert_lot(lot_number, product)
 
-                # Insert into the ICP table
+                # Insert into tables
                 try:
-                    # Insert each data type into its respective table
                     cursor.execute(insert_icp_records, (lot_number, status, *icp_values))
                     cursor.execute(insert_solid_content_records, (lot_number, status, solid_content_value))
+                    cursor.execute(insert_cnt_content_records, (lot_number, status, cnt_content_value))
                     cursor.execute(insert_particle_size_records, (lot_number, status, particle_size_value))
                     cursor.execute(insert_viscosity_records, (lot_number, status, viscosity_value))
                     cursor.execute(insert_moisture_records, (lot_number, status, moisture_value))
                     cursor.execute(insert_electrical_resistance_records, (lot_number, status, electrical_resistance_value))
-                    cursor.execute(insert_magnetic_impurity_records, (lot_number, status, magnetic_impurity_value))
+                    cursor.execute(insert_magnetic_impurity_records, (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn))
 
                     print(f"Inserted data for lot_number {lot_number} into respective tables.")
                 except mysql.connector.Error as err:
