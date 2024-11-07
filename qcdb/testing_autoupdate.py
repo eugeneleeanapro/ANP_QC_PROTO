@@ -82,56 +82,46 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
-# Check individual parameter specifications with debug output
+# Check individual parameter specifications
 def check_individual_specifications(product_name, param, value):
     specs = specifications.get(product_name)
     if not specs or value is None:
         print(f"No specifications found for {product_name} or value is None for {param}.")
         return "FAIL"
 
-    # Debugging statement for the parameter being checked
     print(f"Checking {param} for product {product_name} with value {value}")
 
     if param in ["Solid Content (%)", "CNT Content (%)"]:
         min_val, max_val = specs[param]
-        result = "PASS" if min_val <= value <= max_val else "FAIL"
-        print(f"Expected range: {min_val} to {max_val}, Result: {result}")
-        return result
+        return "PASS" if min_val <= value <= max_val else "FAIL"
     elif param == "Viscosity (cP)":
-        max_val = specs["Viscosity (cP)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Viscosity (cP)"] else "FAIL"
     elif param == "Particle Size (μm)":
-        max_val = specs["Particle Size (μm)"]
-        result = "PASS" if value < max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value < specs["Particle Size (μm)"] else "FAIL"
     elif param == "Moisture (ppm)":
-        max_val = specs.get("Moisture (ppm)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs.get("Moisture (ppm)", float('inf')) else "FAIL"
     elif param == "Electrode Resistance (Ω-cm)":
-        max_val = specs["Electrode Resistance (Ω-cm)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Electrode Resistance (Ω-cm)"] else "FAIL"
     elif param in specs["Impurities"]:
-        max_val = specs["Impurities"][param]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max for {param}: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Impurities"][param] else "FAIL"
     elif param == "Magnetic Impurity (ppb)":
-        max_val = specs.get("Magnetic Impurity (ppb)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
-    else:
-        print(f"No specification rule matched for {param}.")
-        return "FAIL"
+        return "PASS" if value <= specs.get("Magnetic Impurity (ppb)", float('inf')) else "FAIL"
+    return "FAIL"
 
-# Function to process the CSV file and update the database with individual status per column
+# Check or insert lot and product, allowing multiple lot_numbers per product
+def check_or_insert_lot(cursor, lot_number, product):
+    cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
+    result = cursor.fetchone()
+    
+    if result:
+        print(f"Lot number {lot_number} already exists, skipping insertion.")
+        return True
+    else:
+        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
+        print(f"Inserted new lot_number {lot_number} with product {product} into lots table.")
+        return True
+
+# Main update function
 def update_database_from_csv(csv_file_path):
     global last_processed_row
     last_processed_row = load_last_processed_row()
@@ -143,13 +133,6 @@ def update_database_from_csv(csv_file_path):
         return
 
     cursor = connection.cursor()
-
-    def check_or_insert_lot(lot_number, product):
-        cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
-        result = cursor.fetchone()
-        if not result:
-            cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-            print(f"Inserted new lot_number {lot_number} into lots table.")
 
     try:
         with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
@@ -195,13 +178,13 @@ def update_database_from_csv(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                check_or_insert_lot(lot_number, product)
+                if not check_or_insert_lot(cursor, lot_number, product):
+                    print(f"Skipping related inserts for lot_number {lot_number} due to lot conflict.")
+                    continue
                 
-                # Insert individual statuses and values for each parameter
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
 
                 try:
-                    # Insert statements for each table with individual parameter statuses
                     cursor.execute("INSERT INTO solid_content (lot_number, status, solid_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content), status = %s", (lot_number, statuses["Solid Content (%)"], solid_content_value, statuses["Solid Content (%)"]))
                     cursor.execute("INSERT INTO cnt_content (lot_number, status, cnt_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE cnt_content = VALUES(cnt_content), status = %s", (lot_number, statuses["CNT Content (%)"], cnt_content_value, statuses["CNT Content (%)"]))
                     cursor.execute("INSERT INTO particle_size (lot_number, status, particle_size) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE particle_size = VALUES(particle_size), status = %s", (lot_number, statuses["Particle Size (μm)"], particle_size_value, statuses["Particle Size (μm)"]))
@@ -214,37 +197,60 @@ def update_database_from_csv(csv_file_path):
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
 
-                # Update the last processed row after successfully inserting all data for a row
                 last_processed_row = index
 
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
-        # Commit changes and close the connection
         connection.commit()
         connection.close()
-        # Save the last processed row number for persistence
         save_last_processed_row(last_processed_row)
         print("Database update completed.")
 
-# Poll for changes every 3 minutes
+# Polling loop
 def poll_for_changes_every_3_minutes(csv_file_path):
     global last_processed_row
     while True:
         try:
             print("Waiting 3 minutes for the next update...")
-            time.sleep(180)  # Wait for 3 minutes
-
+            time.sleep(180)  # Wait 3 minutes
             previous_row_count = last_processed_row
             update_database_from_csv(csv_file_path)
-
             if last_processed_row > previous_row_count:
                 print(f"Database updated with new rows up to row {last_processed_row}.")
             else:
                 print("No new data found. Update skipped.")
-
         except Exception as e:
             print(f"Error in polling loop: {e}")
+        except KeyboardInterrupt:
+            print("Polling stopped manually.")
+            break
 
 csv_file_path = 'C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv'
 poll_for_changes_every_3_minutes(csv_file_path)
+
+
+
+# SET FOREIGN_KEY_CHECKS = 0;
+
+# DELETE FROM electrical_resistance;
+# DELETE FROM icp;
+# DELETE FROM solid_content;
+# DELETE FROM cnt_content;
+# DELETE FROM particle_size;
+# DELETE FROM viscosity;
+# DELETE FROM moisture;
+# DELETE FROM magnetic_impurity;
+# DELETE FROM lots;
+
+# ALTER TABLE electrical_resistance AUTO_INCREMENT = 1;
+# ALTER TABLE icp AUTO_INCREMENT = 1;
+# ALTER TABLE solid_content AUTO_INCREMENT = 1;
+# ALTER TABLE cnt_content AUTO_INCREMENT = 1;
+# ALTER TABLE particle_size AUTO_INCREMENT = 1;
+# ALTER TABLE viscosity AUTO_INCREMENT = 1;
+# ALTER TABLE moisture AUTO_INCREMENT = 1;
+# ALTER TABLE magnetic_impurity AUTO_INCREMENT = 1;
+# ALTER TABLE lots AUTO_INCREMENT = 1;
+
+# SET FOREIGN_KEY_CHECKS = 1;

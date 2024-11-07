@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 # Initialize last_processed_row as a global variable at the beginning
 last_processed_row = 0
+last_processed_row_file = 'last_processed_row.txt'
 
 # Database connection function
 def connect_to_database():
@@ -89,7 +90,6 @@ def check_individual_specifications(product_name, param, value):
         print(f"No specifications found for {product_name} or value is None for {param}.")
         return "FAIL"
 
-    # Debugging statement for the parameter being checked
     print(f"Checking {param} for product {product_name} with value {value}")
 
     if param in ["Solid Content (%)", "CNT Content (%)"]:
@@ -131,7 +131,23 @@ def check_individual_specifications(product_name, param, value):
         print(f"No specification rule matched for {param}.")
         return "FAIL"
 
-# Function to process the CSV file and update the database with individual status per column
+# Function to check for existing `lot_number` and `product` entry or insert/update as needed
+def check_or_insert_lot(cursor, lot_number, product):
+    cursor.execute("SELECT lot_number, product FROM lots WHERE lot_number = %s", (lot_number,))
+    result = cursor.fetchone()
+    
+    if result:
+        # Lot already exists; we just update the production_date
+        cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
+        print(f"Updated production_date for existing lot_number {lot_number} with product {product}.")
+        return True
+    else:
+        # Insert new lot
+        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
+        print(f"Inserted new lot_number {lot_number} with product {product} into lots table.")
+        return True
+
+# Main update function
 def update_database_from_csv(csv_file_path):
     global last_processed_row
     last_processed_row = load_last_processed_row()
@@ -143,13 +159,6 @@ def update_database_from_csv(csv_file_path):
         return
 
     cursor = connection.cursor()
-
-    def check_or_insert_lot(lot_number, product):
-        cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
-        result = cursor.fetchone()
-        if not result:
-            cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-            print(f"Inserted new lot_number {lot_number} into lots table.")
 
     try:
         with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
@@ -195,13 +204,12 @@ def update_database_from_csv(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                check_or_insert_lot(lot_number, product)
+                # Only proceed if `lot_number` is confirmed or newly inserted
+                check_or_insert_lot(cursor, lot_number, product)
                 
-                # Insert individual statuses and values for each parameter
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
 
                 try:
-                    # Insert statements for each table with individual parameter statuses
                     cursor.execute("INSERT INTO solid_content (lot_number, status, solid_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content), status = %s", (lot_number, statuses["Solid Content (%)"], solid_content_value, statuses["Solid Content (%)"]))
                     cursor.execute("INSERT INTO cnt_content (lot_number, status, cnt_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE cnt_content = VALUES(cnt_content), status = %s", (lot_number, statuses["CNT Content (%)"], cnt_content_value, statuses["CNT Content (%)"]))
                     cursor.execute("INSERT INTO particle_size (lot_number, status, particle_size) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE particle_size = VALUES(particle_size), status = %s", (lot_number, statuses["Particle Size (μm)"], particle_size_value, statuses["Particle Size (μm)"]))
@@ -214,20 +222,17 @@ def update_database_from_csv(csv_file_path):
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
 
-                # Update the last processed row after successfully inserting all data for a row
                 last_processed_row = index
 
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
-        # Commit changes and close the connection
         connection.commit()
         connection.close()
-        # Save the last processed row number for persistence
         save_last_processed_row(last_processed_row)
         print("Database update completed.")
 
-# Poll for changes every hour
+# Polling loop
 def poll_for_changes_every_hour(csv_file_path):
     while True:
         try:

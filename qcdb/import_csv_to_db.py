@@ -1,186 +1,202 @@
 import csv
 import mysql.connector
+import os
 
-# Connect to the MySQL database (qcdb)
-connection = mysql.connector.connect(
-    host='localhost',
-    user='root',  # Default MySQL user for AMPPS
-    password='mysql',  # MySQL password
-    database='qcdb'  # Your database name
-)
+# Database connection function
+def connect_to_database():
+    try:
+        connection = mysql.connector.connect(
+            host='localhost',
+            user='root',
+            password='mysql',
+            database='qcdb'
+        )
+        return connection
+    except mysql.connector.Error as err:
+        print(f"Error connecting to the database: {err}")
+        return None
 
-# Creating a cursor object to execute SQL queries on the database
-cursor = connection.cursor()
+# Product specifications
+specifications = {
+    "5.4J": {
+        "Solid Content (%)": (5.3, 5.6),
+        "CNT Content (%)": (4.4, 4.7),
+        "Viscosity (cP)": 10000,
+        "Particle Size (μm)": 3.0,
+        "Moisture (ppm)": 1000,
+        "Electrode Resistance (Ω-cm)": 45,
+        "Impurities": {
+            "Ca": 20, "Cr": 1, "Cu": 1, "Fe": 2.0, "Na": 10,
+            "Ni": 1, "Zn": 1, "Zr": 1
+        }
+    },
+    "6.0J": {
+        "Solid Content (%)": (5.9, 6.2),
+        "CNT Content (%)": (4.9, 5.2),
+        "Viscosity (cP)": 10000,
+        "Particle Size (μm)": 3.0,
+        "Moisture (ppm)": 1000,
+        "Electrode Resistance (Ω-cm)": 45,
+        "Impurities": {
+            "Ca": 20, "Cr": 1, "Cu": 1, "Fe": 2.3, "Na": 10,
+            "Ni": 1, "Zn": 1, "Zr": 1
+        },
+        "Magnetic Impurity (ppb)": 30
+    },
+    "6.5J": {
+        "Solid Content (%)": (6.4, 6.7),
+        "CNT Content (%)": (4.9, 5.2),
+        "Viscosity (cP)": 3000,
+        "Particle Size (μm)": 3.0,
+        "Electrode Resistance (Ω-cm)": 30,
+        "Impurities": {
+            "Ca": 1, "Cr": 1, "Cu": 1, "Fe": 2.3, "Na": 10,
+            "Ni": 1, "Zn": 1, "Zr": 1
+        },
+        "Magnetic Impurity (ppb)": 30
+    }
+}
 
-# Table definitions
+# Convert values to float safely
+def safe_float(value):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
 
-# Create the lots table to store lot_number and production_date
-create_lots_table = '''CREATE TABLE IF NOT EXISTS lots(
-                      lot_number VARCHAR(50) PRIMARY KEY,
-                      product VARCHAR(100),
-                      production_date DATE
-                    );'''
+# Check individual parameter specifications with debug output
+def check_individual_specifications(product_name, param, value):
+    specs = specifications.get(product_name)
+    if not specs or value is None:
+        print(f"No specifications found for {product_name} or value is None for {param}.")
+        return "FAIL"
 
-# Create the icp table with a foreign key constraint referencing the lots table
-create_icp_table = '''CREATE TABLE IF NOT EXISTS icp(
-                      id INT AUTO_INCREMENT PRIMARY KEY,
-                      lot_number VARCHAR(50),
-                      status VARCHAR(10),
-                      Sn DECIMAL(12, 9),
-                      Si DECIMAL(12, 9),
-                      Ca DECIMAL(12, 9),
-                      Cr DECIMAL(12, 9),
-                      Cu DECIMAL(12, 9),
-                      Zr DECIMAL(12, 9),
-                      Fe DECIMAL(12, 9),
-                      Na DECIMAL(12, 9),
-                      Ni DECIMAL(12, 9),
-                      Zn DECIMAL(12, 9),
-                      Co DECIMAL(12, 9),
-                      CONSTRAINT fk_lot_number FOREIGN KEY (lot_number) REFERENCES lots(lot_number)
-                    );'''
+    print(f"Checking {param} for product {product_name} with value {value}")
 
-# Create additional tables for solid_content, particle_size, etc.
-create_solid_content_table = '''CREATE TABLE IF NOT EXISTS solid_content(
-                                  id INT AUTO_INCREMENT PRIMARY KEY,
-                                  lot_number VARCHAR(50),
-                                  status VARCHAR(10),
-                                  solid_content DECIMAL(10, 2)
-                                );'''
+    if param in ["Solid Content (%)", "CNT Content (%)"]:
+        min_val, max_val = specs[param]
+        result = "PASS" if min_val <= value <= max_val else "FAIL"
+        print(f"Expected range: {min_val} to {max_val}, Result: {result}")
+        return result
+    elif param == "Viscosity (cP)":
+        max_val = specs["Viscosity (cP)"]
+        result = "PASS" if value <= max_val else "FAIL"
+        print(f"Expected max: {max_val}, Result: {result}")
+        return result
+    elif param == "Particle Size (μm)":
+        max_val = specs["Particle Size (μm)"]
+        result = "PASS" if value < max_val else "FAIL"
+        print(f"Expected max: {max_val}, Result: {result}")
+        return result
+    elif param == "Moisture (ppm)":
+        max_val = specs.get("Moisture (ppm)", float('inf'))
+        result = "PASS" if value <= max_val else "FAIL"
+        print(f"Expected max: {max_val}, Result: {result}")
+        return result
+    elif param == "Electrode Resistance (Ω-cm)":
+        max_val = specs["Electrode Resistance (Ω-cm)"]
+        result = "PASS" if value <= max_val else "FAIL"
+        print(f"Expected max: {max_val}, Result: {result}")
+        return result
+    elif param in specs["Impurities"]:
+        max_val = specs["Impurities"][param]
+        result = "PASS" if value <= max_val else "FAIL"
+        print(f"Expected max for {param}: {max_val}, Result: {result}")
+        return result
+    elif param == "Magnetic Impurity (ppb)":
+        max_val = specs.get("Magnetic Impurity (ppb)", float('inf'))
+        result = "PASS" if value <= max_val else "FAIL"
+        print(f"Expected max: {max_val}, Result: {result}")
+        return result
+    else:
+        print(f"No specification rule matched for {param}.")
+        return "FAIL"
 
-create_cnt_content_table = '''CREATE TABLE IF NOT EXISTS CNT_content(
-                                  id INT AUTO_INCREMENT PRIMARY KEY,
-                                  lot_number VARCHAR(50),
-                                  status VARCHAR(10),
-                                  CNT_content DECIMAL(10, 2)
-                                );'''
-
-create_particle_size_table = '''CREATE TABLE IF NOT EXISTS particle_size(
-                                  id INT AUTO_INCREMENT PRIMARY KEY,
-                                  lot_number VARCHAR(50),
-                                  status VARCHAR(10),
-                                  particle_size DECIMAL(10, 2)
-                                );'''
-
-create_viscosity_table = '''CREATE TABLE IF NOT EXISTS viscosity(
-                             id INT AUTO_INCREMENT PRIMARY KEY,
-                             lot_number VARCHAR(50),
-                             status VARCHAR(10),
-                             viscosity DECIMAL(10, 2)
-                           );'''
-
-create_moisture_table = '''CREATE TABLE IF NOT EXISTS moisture(
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            lot_number VARCHAR(50),
-                            status VARCHAR(10),
-                            moisture DECIMAL(10, 2)
-                          );'''
-
-create_electrical_resistance_table = '''CREATE TABLE IF NOT EXISTS electrical_resistance(
-                                         id INT AUTO_INCREMENT PRIMARY KEY,
-                                         lot_number VARCHAR(50),
-                                         status VARCHAR(10),
-                                         electrical_resistance DECIMAL(10, 2)
-                                       );'''
-
-create_magnetic_impurity_table = '''CREATE TABLE IF NOT EXISTS magnetic_impurity(
-                                      id INT AUTO_INCREMENT PRIMARY KEY,
-                                      lot_number VARCHAR(50),
-                                      status VARCHAR(10),
-                                      magnetic_impurity_sum DECIMAL(10, 2),
-                                      mag_Cr DECIMAL(10, 2),
-                                      mag_Fe DECIMAL(10, 2),
-                                      mag_Ni DECIMAL(10, 2),
-                                      mag_Zn DECIMAL(10, 2)
-                                    );'''
-
-# Execute all table creation queries
-cursor.execute(create_lots_table)
-cursor.execute(create_icp_table)
-cursor.execute(create_solid_content_table)
-cursor.execute(create_cnt_content_table)
-cursor.execute(create_particle_size_table)
-cursor.execute(create_viscosity_table)
-cursor.execute(create_moisture_table)
-cursor.execute(create_electrical_resistance_table)
-cursor.execute(create_magnetic_impurity_table)
-
-# Function to check if a lot exists in the 'lots' table, insert if not
-def check_or_insert_lot(lot_number, product):
+# Function to check for existing `lot_number` and `product` entry or insert/update as needed
+def check_or_insert_lot(cursor, lot_number, product):
     cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
     result = cursor.fetchone()
     
-    # If the lot does not exist, insert it
-    if not result:
-        print(f"Inserting lot_number: {lot_number} with product: {product} into lots table.")
-        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-
-# Open the CSV file and read only the last row
-with open('C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv', 'r') as file:
-    contents = list(csv.reader(file))  # Convert CSV reader to list
-    if len(contents) < 2:
-        print("CSV file has no data rows.")
+    if result:
+        cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
+        print(f"Updated production_date for existing lot_number {lot_number}.")
     else:
-        last_row = contents[-1]  # Get the last data row
+        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
+        print(f"Inserted new lot_number {lot_number} with product {product} into lots table.")
 
-        # Strip any empty trailing values in the last row
-        last_row = [r if r != '' else None for r in last_row]
+# Main function to import the CSV file and update the database
+def import_csv_to_db(csv_file_path):
+    print("Starting CSV data import...")
 
-        # Ensure the row has enough valid columns (Expected: 24 non-null)
-        if len([x for x in last_row if x is not None]) < 24:
-            print(f"Skipping incomplete or invalid row: {last_row}")
-        else:
-            lot_number = last_row[0]
-            product = last_row[1]  # Product is now column 1
-            check_or_insert_lot(lot_number, product)  # Insert lot_number and product if they don't exist
+    connection = connect_to_database()
+    if not connection:
+        print("Failed to connect to the database. Skipping update.")
+        return
 
-            # SQL queries for data insertion
-            insert_icp_records = '''
-                INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            '''
-            insert_solid_content_records = '''
-                INSERT INTO solid_content (lot_number, status, solid_content)
-                VALUES (%s, %s, %s)
-            '''
-            insert_cnt_content_records = '''
-                INSERT INTO CNT_content (lot_number, status, CNT_content)
-                VALUES (%s, %s, %s)
-            '''
-            insert_particle_size_records = '''
-                INSERT INTO particle_size (lot_number, status, particle_size)
-                VALUES (%s, %s, %s)
-            '''
-            insert_viscosity_records = '''
-                INSERT INTO viscosity (lot_number, status, viscosity)
-                VALUES (%s, %s, %s)
-            '''
-            insert_moisture_records = '''
-                INSERT INTO moisture (lot_number, status, moisture)
-                VALUES (%s, %s, %s)
-            '''
-            insert_electrical_resistance_records = '''
-                INSERT INTO electrical_resistance (lot_number, status, electrical_resistance)
-                VALUES (%s, %s, %s)
-            '''
-            insert_magnetic_impurity_records = '''
-                INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            '''
+    cursor = connection.cursor()
 
-            # Insert into tables
-            cursor.execute(insert_icp_records, (lot_number, 'Pass', last_row[13], last_row[14], last_row[15], last_row[16], last_row[17], last_row[18], last_row[19], last_row[20], last_row[21], last_row[22], last_row[23]))
-            cursor.execute(insert_solid_content_records, (lot_number, 'Pass', last_row[2]))
-            cursor.execute(insert_cnt_content_records, (lot_number, 'Pass', last_row[3]))
-            cursor.execute(insert_particle_size_records, (lot_number, 'Pass', last_row[4]))
-            cursor.execute(insert_viscosity_records, (lot_number, 'Pass', last_row[5]))
-            cursor.execute(insert_moisture_records, (lot_number, 'Pass', last_row[6]))
-            cursor.execute(insert_electrical_resistance_records, (lot_number, 'Pass', last_row[7]))
-            cursor.execute(insert_magnetic_impurity_records, (lot_number, 'Pass', last_row[8], last_row[9], last_row[10], last_row[11], last_row[12]))
+    try:
+        with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
+            reader = csv.reader(file)
+            headers = next(reader)  # skip header
+            for row in reader:
+                if len(row) < 24:
+                    print(f"Skipping incomplete row: {row}")
+                    continue
 
-# Commit and verify insertion
-connection.commit()
-print("Last row of CSV successfully inserted into the database.")
+                lot_number = row[0]
+                product = row[1]
+                solid_content_value = safe_float(row[2])
+                cnt_content_value = safe_float(row[3])
+                particle_size_value = safe_float(row[4])
+                viscosity_value = safe_float(row[5])
+                moisture_value = safe_float(row[6])
+                electrical_resistance_value = safe_float(row[7])
+                magnetic_impurity_sum = safe_float(row[8])
+                mag_Cr = safe_float(row[9])
+                mag_Fe = safe_float(row[10])
+                mag_Ni = safe_float(row[11])
+                mag_Zn = safe_float(row[12])
+                icp_values = [safe_float(val) for val in row[13:24]]
 
-# Close the database connection
-connection.close()
+                test_data = {
+                    "Solid Content (%)": solid_content_value,
+                    "CNT Content (%)": cnt_content_value,
+                    "Viscosity (cP)": viscosity_value,
+                    "Particle Size (μm)": particle_size_value,
+                    "Moisture (ppm)": moisture_value,
+                    "Electrode Resistance (Ω-cm)": electrical_resistance_value,
+                    "Ca": mag_Cr, "Cr": mag_Cr, "Cu": mag_Fe, "Fe": mag_Fe,
+                    "Na": mag_Ni, "Ni": mag_Ni, "Zn": mag_Zn, "Zr": mag_Zn,
+                    "Magnetic Impurity (ppb)": magnetic_impurity_sum
+                }
+
+                # Ensure `lot_number` entry in `lots` table
+                check_or_insert_lot(cursor, lot_number, product)
+                
+                statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
+
+                try:
+                    # Insert or update for each relevant parameter
+                    cursor.execute("INSERT INTO solid_content (lot_number, status, solid_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content), status = %s", (lot_number, statuses["Solid Content (%)"], solid_content_value, statuses["Solid Content (%)"]))
+                    cursor.execute("INSERT INTO cnt_content (lot_number, status, cnt_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE cnt_content = VALUES(cnt_content), status = %s", (lot_number, statuses["CNT Content (%)"], cnt_content_value, statuses["CNT Content (%)"]))
+                    cursor.execute("INSERT INTO particle_size (lot_number, status, particle_size) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE particle_size = VALUES(particle_size), status = %s", (lot_number, statuses["Particle Size (μm)"], particle_size_value, statuses["Particle Size (μm)"]))
+                    cursor.execute("INSERT INTO viscosity (lot_number, status, viscosity) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE viscosity = VALUES(viscosity), status = %s", (lot_number, statuses["Viscosity (cP)"], viscosity_value, statuses["Viscosity (cP)"]))
+                    cursor.execute("INSERT INTO moisture (lot_number, status, moisture) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE moisture = VALUES(moisture), status = %s", (lot_number, statuses["Moisture (ppm)"], moisture_value, statuses["Moisture (ppm)"]))
+                    cursor.execute("INSERT INTO electrical_resistance (lot_number, status, electrical_resistance) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE electrical_resistance = VALUES(electrical_resistance), status = %s", (lot_number, statuses["Electrode Resistance (Ω-cm)"], electrical_resistance_value, statuses["Electrode Resistance (Ω-cm)"]))
+                    cursor.execute("INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE magnetic_impurity_sum = VALUES(magnetic_impurity_sum), status = %s", (lot_number, statuses["Magnetic Impurity (ppb)"], magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn, statuses["Magnetic Impurity (ppb)"]))
+                    cursor.execute("INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE Sn = VALUES(Sn), Si = VALUES(Si), Ca = VALUES(Ca), Cr = VALUES(Cr), Cu = VALUES(Cu), Zr = VALUES(Zr), Fe = VALUES(Fe), Na = VALUES(Na), Ni = VALUES(Ni), Zn = VALUES(Zn), Co = VALUES(Co)", (lot_number, statuses["CNT Content (%)"], *icp_values))
+
+                except mysql.connector.Error as err:
+                    print(f"Error inserting data for lot_number {lot_number}: {err}")
+
+    except Exception as e:
+        print(f"Error processing CSV file: {e}")
+    finally:
+        connection.commit()
+        connection.close()
+        print("Database update completed.")
+
+# Specify the CSV file path and execute
+csv_file_path = 'C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv'
+import_csv_to_db(csv_file_path)
