@@ -1,0 +1,43 @@
+1. Product Specifications Mapping 
+    (Products API, Inventory API, Integrations API)
+    
+    Suggested Mapping:
+        Product Name: product in QC Database → productName in Fishbowl.
+        
+        Lot Number: lot_number → Store in a custom field in Fishbowl or link it with lot-based tracking if Fishbowl supports it for traceability.
+        
+        Specifications: Use the Products API to attach these specifications as attributes or tags. In Fishbowl, each QC metric can be stored as custom fields within the product details.
+
+2. Inventory Tracking
+    (Inventory API)
+
+    Suggested Mapping:
+        Lot Number in QC Database → Use lot tracking in Fishbowl or a unique identifier field.
+        
+        roduct Status (from QC testing pass/fail) → Update inventory availability or warehouse location in Fishbowl based on QC results.
+
+3. Manufacture Orders & Parts Association
+    (Manufacturer Order, Parts API)
+
+    Suggested Mapping:
+        Part Numbers: Link product in QC to partNumber in Fishbowl.
+        
+        Manufacturing Readiness: Pass or fail status in QC can trigger Manufacture Orders if the QC process approves parts.
+
+4. Suppliers and Vendors (for Traceability).
+    (Vendors API)
+
+    Suggested Mapping:
+        Supplier Details: Link any vendor-related fields in your QC database to vendorName or vendorPartNumber in Fishbowl.
+
+5. User & UOM (Unit of Measurement) Management
+    (Users API, UOM API)
+
+    Suggested Mapping:
+        UOMs in QC data (e.g., μm for particle size, cP for viscosity) → Map to Fishbowl’s UOM setup for consistent measurement handling.
+
+6. Data Flow
+    1. Product 6.0J with QC approval and a specific lot_number gets added to Fishbowl as a Product using the Products API.
+    2. Specifications (like solid content and moisture) are added as custom fields under this product.
+    3. Inventory Availability updates through the Inventory API if the QC results pass.
+    4. Manufacture Orders can be created if the product meets QC specifications, linking the product and lot number to ensure traceability.
