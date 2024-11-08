@@ -70,10 +70,7 @@ def fill_coa_for_6_0j(lot_number):
     # Fill in COA data based on provided cell mappings
     sheet["D12"] = lot_number
     sheet["D14"] = qc_data.get("inspection_date", "N/A")
-    sheet["D16"] = "Pass" if qc_data["solid_content_status"] == "PASS" and qc_data["cnt_content_status"] == "PASS" \
-                    and qc_data["viscosity_status"] == "PASS" and qc_data["particle_size_status"] == "PASS" \
-                    and qc_data["moisture_status"] == "PASS" and qc_data["electrical_resistance_status"] == "PASS" \
-                    and qc_data["magnetic_impurity_status"] == "PASS" else "Fail"
+    sheet["D16"] = "Pass" if all(value == "PASS" for value in qc_data.values() if isinstance(value, str)) else "Fail"
     sheet["E20"], sheet["F20"] = qc_data["solid_content_value"], qc_data["solid_content_status"]
     sheet["E21"], sheet["F21"] = qc_data["cnt_content_value"], qc_data["cnt_content_status"]
     sheet["E22"], sheet["F22"] = qc_data["viscosity_value"], qc_data["viscosity_status"]
@@ -81,9 +78,13 @@ def fill_coa_for_6_0j(lot_number):
     sheet["E24"], sheet["F24"] = qc_data["moisture_value"], qc_data["moisture_status"]
     sheet["E25"], sheet["F25"] = qc_data["electrical_resistance_value"], qc_data["electrical_resistance_status"]
 
-    # ICP Elements
-    sheet["F38"], sheet["F39"], sheet["F40"], sheet["F41"], sheet["F42"], sheet["F43"], sheet["F44"], sheet["F45"] = \
-        qc_data["Ca"], qc_data["Cr"], qc_data["Cu"], qc_data["Fe"], qc_data["Na"], qc_data["Zn"], qc_data["Zr"], qc_data["Co"]
+    # ICP Elements with Pass/Fail statuses
+    icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Zn", "Zr", "Co"]
+    icp_cells = ["F38", "F39", "F40", "F41", "F42", "F43", "F44", "F45"]
+    
+    for element, cell in zip(icp_elements, icp_cells):
+        sheet[cell] = qc_data[element]
+        sheet[cell.replace("F", "G")] = "PASS" if qc_data[element] <= 5 else "FAIL"  # Example threshold of 5 for PASS
 
     # Magnetic Impurity
     sheet["F51"] = qc_data["mag_sum"]
