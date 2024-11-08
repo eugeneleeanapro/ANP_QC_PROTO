@@ -213,7 +213,7 @@ def poll_for_changes_every_3_minutes(csv_file_path):
     while True:
         try:
             print("Waiting 3 minutes for the next update...")
-            time.sleep(180)  # Wait 3 minutes
+            time.sleep(3)  # Wait 3 minutes
             previous_row_count = last_processed_row
             update_database_from_csv(csv_file_path)
             if last_processed_row > previous_row_count:
