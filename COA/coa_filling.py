@@ -59,39 +59,6 @@ def fetch_qc_data(lot_number):
     
     return qc_data
 
-# Update lot status based on individual test results, ignoring NULL values, and only if the current status is NULL
-def update_lot_status(lot_number, qc_data):
-    connection = connect_to_database()
-    if not connection:
-        print("Failed to connect to the database.")
-        return
-
-    cursor = connection.cursor()
-
-    # Check current status in `lots` table
-    cursor.execute("SELECT status FROM lots WHERE lot_number = %s", (lot_number,))
-    current_status = cursor.fetchone()[0]
-
-    # Only proceed with status update if current status is NULL (do not overwrite)
-    if current_status is None:
-        # Only consider actual "FAIL" statuses; ignore NULL values
-        pass_status = all(
-            qc_data[key] == "PASS" for key in [
-                "solid_content_status", "cnt_content_status", "particle_size_status", 
-                "viscosity_status", "moisture_status", "electrical_resistance_status", 
-                "magnetic_impurity_status", "icp_status"
-            ] if qc_data[key] is not None
-        )
-        lot_status = "PASS" if pass_status else "FAIL"
-
-        cursor.execute("UPDATE lots SET status = %s WHERE lot_number = %s", (lot_status, lot_number))
-        connection.commit()
-        print(f"Lot status updated for lot_number: {lot_number}")
-    else:
-        print(f"Lot status for lot_number: {lot_number} remains unchanged (current status: {current_status})")
-
-    connection.close()
-
 # Fill COA template for product 6.0J
 def fill_coa_for_6_0j(lot_number):
     # Load the COA template
@@ -104,14 +71,11 @@ def fill_coa_for_6_0j(lot_number):
         print(f"No data found for lot number: {lot_number}")
         return
 
-    # Update lot status in the database based on individual test statuses
-    update_lot_status(lot_number, qc_data)
-
-    # Map data to COA fields in the Excel sheet
+    # Map data to COA fields in the Excel sheet without modifying the database status
     sheet["D12"] = lot_number
     sheet["D14"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
     sheet["D15"] = datetime.now().strftime("%Y-%m-%d")  # Date to write COA
-    sheet["D16"] = qc_data["lot_status"] or "PASS"  # Status from lots table
+    sheet["D16"] = qc_data["lot_status"]  # Status from lots table
 
     # Testing results and statuses
     sheet["E20"] = qc_data["solid_content"]
@@ -126,26 +90,25 @@ def fill_coa_for_6_0j(lot_number):
     sheet["E23"] = qc_data["particle_size"]
     sheet["F23"] = qc_data["particle_size_status"] or "PASS"
     
-    sheet["E24"] = qc_data["moisture"]  # Moisture testing result in E24
+    sheet["E24"] = qc_data["moisture"]
     sheet["F24"] = qc_data["moisture_status"] or "PASS"
     
     sheet["E25"] = qc_data["electrical_resistance"]
     sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
     
-    # Map ICP elements to COA template cells and add pass/fail status indicators in G38-G45
+    # Map ICP elements to COA template cells and add pass/fail status indicators
     icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
     for i, element in enumerate(icp_elements, start=38):
-        value = qc_data.get(element, "N/A")
+        value = qc_data[element] if qc_data[element] is not None else "N/A"
         sheet[f"F{i}"] = value
 
-        # Set Pass/Fail status in the adjacent column (G) based on the individual element
-        element_status = "PASS" if qc_data[element] is not None and qc_data["icp_status"] == "PASS" else "FAIL"
-        sheet[f"G{i}"] = element_status
+        # Set Pass/Fail status in the adjacent column (G) based on icp_status
+        sheet[f"G{i}"] = "PASS" if qc_data["icp_status"] == "PASS" else "FAIL"
     
     # Magnetic impurity results and statuses
     magnetic_elements = ["mag_Cr", "mag_Fe", "mag_Ni", "mag_Zn"]
     for i, element in enumerate(magnetic_elements, start=47):
-        value = qc_data.get(element, "N/A")
+        value = qc_data[element] if qc_data[element] is not None else "N/A"
         sheet[f"F{i}"] = value
 
     # Magnetic impurity sum and status
