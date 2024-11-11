@@ -96,15 +96,14 @@ def fill_coa_for_6_0j(lot_number):
     sheet["E25"] = qc_data["electrical_resistance"]
     sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
     
-    # Map ICP elements to COA template cells and add pass/fail status indicators
+    # Map ICP elements to COA template cells and add pass/fail status indicators based on `icp_status`
     icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
+    icp_status = qc_data["icp_status"]  # Only use icp_status to determine Pass/Fail for all ICP elements
     for i, element in enumerate(icp_elements, start=38):
         value = qc_data[element] if qc_data[element] is not None else "N/A"
         sheet[f"F{i}"] = value
+        sheet[f"G{i}"] = icp_status  # Apply icp_status directly for each ICP element
 
-        # Set Pass/Fail status in the adjacent column (G) based on icp_status
-        sheet[f"G{i}"] = "PASS" if qc_data["icp_status"] == "PASS" else "FAIL"
-    
     # Magnetic impurity results and statuses
     magnetic_elements = ["mag_Cr", "mag_Fe", "mag_Ni", "mag_Zn"]
     for i, element in enumerate(magnetic_elements, start=47):
