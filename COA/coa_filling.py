@@ -1,38 +1,29 @@
+import sys
 import mysql.connector
 from openpyxl import load_workbook
 from datetime import datetime
 
-# Paths to COA template and output
+# Paths for COA template and output
 template_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/COA.xlsx"
 output_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/COA - Copy.xlsx"
 
-# Database connection function
+# Function to connect to the database
 def connect_to_database():
-    try:
-        connection = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='mysql',
-            database='qcdb'
-        )
-        return connection
-    except mysql.connector.Error as err:
-        print(f"Error connecting to the database: {err}")
-        return None
+    return mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='mysql',
+        database='qcdb'
+    )
 
-# Fetch data from QC tables with handling for NULL values
-def fetch_qc_data(lot_number):
+# Main function to fill COA
+def fill_coa(lot_number):
+    # Connect to the database and retrieve QC data for the lot number
     connection = connect_to_database()
-    if not connection:
-        print("Failed to connect to the database.")
-        return None
-
     cursor = connection.cursor(dictionary=True)
     
-    # Define the query to fetch data
     query = """
-    SELECT 
-        lots.lot_number, lots.product, lots.status AS lot_status,
+    SELECT lots.lot_number, lots.product, lots.status AS lot_status,
         solid_content.solid_content, solid_content.status AS solid_content_status,
         cnt_content.cnt_content, cnt_content.status AS cnt_content_status,
         particle_size.particle_size, particle_size.status AS particle_size_status,
@@ -56,127 +47,83 @@ def fetch_qc_data(lot_number):
     cursor.execute(query, (lot_number,))
     qc_data = cursor.fetchone()
     connection.close()
-    
-    return qc_data
 
-# Fill COA template based on product type
-def fill_coa(lot_number):
-    # Load the COA template
-    workbook = load_workbook(template_path)
-    
-    # Fetch QC data for the specified lot number
-    qc_data = fetch_qc_data(lot_number)
     if not qc_data:
         print(f"No data found for lot number: {lot_number}")
         return
+
+    # Load the appropriate sheet from the COA template based on product
+    workbook = load_workbook(template_path)
+    sheet = workbook[qc_data["product"]]  # Select sheet by product name ("6.0J", "6.5J", or "5.4J")
+
+    # Fill in general information
+    sheet["D12"] = lot_number
+    sheet["D14"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
+    sheet["D16"] = qc_data["lot_status"] or "PASS"  # Status from lots table
+
+    # Fill in specific test results and statuses
+    # Adjust fields as per product sheet requirements
+    sheet["E20"] = qc_data["solid_content"]
+    sheet["F20"] = qc_data["solid_content_status"] or "PASS"
     
-    # Determine product type and select appropriate sheet
-    product = qc_data["product"]
-    sheet = None
-    if product == "6.0J":
-        sheet = workbook["6.0J"]
-        
-        # Map data for 6.0J
-        sheet["D12"] = lot_number
-        sheet["D14"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
-        sheet["D15"] = datetime.now().strftime("%Y-%m-%d")  # Date to write COA
-        sheet["D16"] = qc_data["lot_status"]  # Status from lots table
-        
-        # Map testing results and statuses
-        sheet["E20"] = qc_data["solid_content"]
-        sheet["F20"] = qc_data["solid_content_status"] or "PASS"
-        sheet["E21"] = qc_data["cnt_content"]
-        sheet["F21"] = qc_data["cnt_content_status"] or "PASS"
-        sheet["E22"] = qc_data["viscosity"]
-        sheet["F22"] = qc_data["viscosity_status"] or "PASS"
-        sheet["E23"] = qc_data["particle_size"]
-        sheet["F23"] = qc_data["particle_size_status"] or "PASS"
+    sheet["E21"] = qc_data["cnt_content"]
+    sheet["F21"] = qc_data["cnt_content_status"] or "PASS"
+    
+    sheet["E22"] = qc_data["viscosity"]
+    sheet["F22"] = qc_data["viscosity_status"] or "PASS"
+    
+    sheet["E23"] = qc_data["particle_size"]
+    sheet["F23"] = qc_data["particle_size_status"] or "PASS"
+    
+    if qc_data["product"] == "5.4J":
         sheet["E24"] = qc_data["moisture"]
         sheet["F24"] = qc_data["moisture_status"] or "PASS"
         sheet["E25"] = qc_data["electrical_resistance"]
         sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
-        
-        # Map ICP elements
+
         icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
-        icp_status = qc_data["icp_status"]
         for i, element in enumerate(icp_elements, start=38):
             value = qc_data[element] if qc_data[element] is not None else "N/A"
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = icp_status  # Apply icp_status directly for each ICP element
+            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
 
-        # Magnetic impurity results and statuses
-        magnetic_elements = ["mag_Cr", "mag_Fe", "mag_Ni", "mag_Zn"]
-        for i, element in enumerate(magnetic_elements, start=47):
-            value = qc_data[element] if qc_data[element] is not None else "N/A"
-            sheet[f"F{i}"] = value
-
-        sheet["F51"] = qc_data["mag_sum"]
-        sheet["G51"] = qc_data["magnetic_impurity_status"] or "PASS"
-
-    elif product == "6.5J":
-        sheet = workbook["6.5J"]
-        
-        # Map data for 6.5J
-        sheet["D12"] = lot_number
-        sheet["D14"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
-        sheet["D16"] = qc_data["lot_status"]
-        
-        # Map testing results and statuses
-        sheet["E20"] = qc_data["solid_content"]
-        sheet["F20"] = qc_data["solid_content_status"] or "PASS"
-        sheet["E21"] = qc_data["cnt_content"]
-        sheet["F21"] = qc_data["cnt_content_status"] or "PASS"
-        sheet["E22"] = qc_data["viscosity"]
-        sheet["F22"] = qc_data["viscosity_status"] or "PASS"
-        sheet["E23"] = qc_data["particle_size"]
-        sheet["F23"] = qc_data["particle_size_status"] or "PASS"
+    elif qc_data["product"] == "6.5J":
         sheet["E24"] = qc_data["electrical_resistance"]
         sheet["F24"] = qc_data["electrical_resistance_status"] or "PASS"
 
-        # Map ICP elements
         icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr"]
         for i, element in enumerate(icp_elements, start=40):
             value = qc_data[element] if qc_data[element] is not None else "N/A"
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data["icp_status"]
-
+            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
+        
         sheet["F48"] = qc_data["mag_sum"]
         sheet["G48"] = qc_data["magnetic_impurity_status"] or "PASS"
 
-    elif product == "5.4J":
-        sheet = workbook["5.4J"]
-        
-        # Map data for 5.4J
-        sheet["D12"] = lot_number
-        sheet["D15"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
-        sheet["D16"] = qc_data["lot_status"]
-
-        # Map testing results and statuses
-        sheet["E20"] = qc_data["solid_content"]
-        sheet["F20"] = qc_data["solid_content_status"] or "PASS"
-        sheet["E21"] = qc_data["cnt_content"]
-        sheet["F21"] = qc_data["cnt_content_status"] or "PASS"
-        sheet["E22"] = qc_data["viscosity"]
-        sheet["F22"] = qc_data["viscosity_status"] or "PASS"
-        sheet["E23"] = qc_data["particle_size"]
-        sheet["F23"] = qc_data["particle_size_status"] or "PASS"
+    elif qc_data["product"] == "6.0J":
         sheet["E24"] = qc_data["moisture"]
         sheet["F24"] = qc_data["moisture_status"] or "PASS"
         sheet["E25"] = qc_data["electrical_resistance"]
         sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
 
-        # Map ICP elements
-        icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
+        icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr"]
         for i, element in enumerate(icp_elements, start=38):
             value = qc_data[element] if qc_data[element] is not None else "N/A"
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data["icp_status"]
+            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
+        
+        sheet["F51"] = qc_data["mag_sum"]
+        sheet["G51"] = qc_data["magnetic_impurity_status"] or "PASS"
 
-    # Save the updated COA to output
+    # Save the updated COA file
     workbook.save(output_path)
-    print(f"COA saved to {output_path}")
+    print(f"COA saved for lot number {lot_number} to {output_path}")
 
-# Main function to run the filling process
+# Main script logic to handle command-line arguments
 if __name__ == "__main__":
-    lot_number = input("Enter the lot number: ")
+    if len(sys.argv) < 2:
+        print("Error: Lot number not provided.")
+        sys.exit(1)
+    
+    lot_number = sys.argv[1]
     fill_coa(lot_number)

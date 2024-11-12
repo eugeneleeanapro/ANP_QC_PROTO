@@ -2,6 +2,9 @@ import csv
 import mysql.connector
 import os
 
+# Path to the file storing the last processed row
+last_processed_row_file = 'last_processed_row.txt'
+
 # Database connection function
 def connect_to_database():
     try:
@@ -15,6 +18,18 @@ def connect_to_database():
     except mysql.connector.Error as err:
         print(f"Error connecting to the database: {err}")
         return None
+
+# Load the last processed row from a file
+def load_last_processed_row():
+    if os.path.exists(last_processed_row_file):
+        with open(last_processed_row_file, 'r') as file:
+            return int(file.read().strip())
+    return 0
+
+# Save the last processed row to a file
+def save_last_processed_row(row_number):
+    with open(last_processed_row_file, 'w') as file:
+        file.write(str(row_number))
 
 # Product specifications
 specifications = {
@@ -75,42 +90,20 @@ def check_individual_specifications(product_name, param, value):
 
     if param in ["Solid Content (%)", "CNT Content (%)"]:
         min_val, max_val = specs[param]
-        result = "PASS" if min_val <= value <= max_val else "FAIL"
-        print(f"Expected range: {min_val} to {max_val}, Result: {result}")
-        return result
+        return "PASS" if min_val <= value <= max_val else "FAIL"
     elif param == "Viscosity (cP)":
-        max_val = specs["Viscosity (cP)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Viscosity (cP)"] else "FAIL"
     elif param == "Particle Size (μm)":
-        max_val = specs["Particle Size (μm)"]
-        result = "PASS" if value < max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value < specs["Particle Size (μm)"] else "FAIL"
     elif param == "Moisture (ppm)":
-        max_val = specs.get("Moisture (ppm)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs.get("Moisture (ppm)", float('inf')) else "FAIL"
     elif param == "Electrode Resistance (Ω-cm)":
-        max_val = specs["Electrode Resistance (Ω-cm)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Electrode Resistance (Ω-cm)"] else "FAIL"
     elif param in specs["Impurities"]:
-        max_val = specs["Impurities"][param]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max for {param}: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= specs["Impurities"][param] else "FAIL"
     elif param == "Magnetic Impurity (ppb)":
-        max_val = specs.get("Magnetic Impurity (ppb)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
-    else:
-        print(f"No specification rule matched for {param}.")
-        return "FAIL"
+        return "PASS" if value <= specs.get("Magnetic Impurity (ppb)", float('inf')) else "FAIL"
+    return "FAIL"
 
 # Function to check for existing `lot_number` and `product` entry or insert/update as needed
 def check_or_insert_lot(cursor, lot_number, product):
@@ -128,6 +121,8 @@ def check_or_insert_lot(cursor, lot_number, product):
 def import_csv_to_db(csv_file_path):
     print("Starting CSV data import...")
 
+    last_processed_row = load_last_processed_row()
+
     connection = connect_to_database()
     if not connection:
         print("Failed to connect to the database. Skipping update.")
@@ -137,9 +132,15 @@ def import_csv_to_db(csv_file_path):
 
     try:
         with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
-            reader = csv.reader(file)
-            headers = next(reader)  # skip header
-            for row in reader:
+            reader = list(csv.reader(file))
+            headers = reader[0]  # skip header
+            new_rows = reader[last_processed_row + 1:]  # Start from the last unprocessed row
+
+            if not new_rows:
+                print("No new rows to process.")
+                return
+
+            for row in new_rows:
                 if len(row) < 24:
                     print(f"Skipping incomplete row: {row}")
                     continue
@@ -171,7 +172,6 @@ def import_csv_to_db(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                # Ensure `lot_number` entry in `lots` table
                 check_or_insert_lot(cursor, lot_number, product)
                 
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
@@ -190,11 +190,14 @@ def import_csv_to_db(csv_file_path):
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
 
+                last_processed_row += 1
+
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
         connection.commit()
         connection.close()
+        save_last_processed_row(last_processed_row)
         print("Database update completed.")
 
 # Specify the CSV file path and execute
