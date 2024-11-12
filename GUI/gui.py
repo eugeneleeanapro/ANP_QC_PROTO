@@ -2,13 +2,12 @@ import tkinter as tk
 from tkinter import messagebox
 import subprocess
 import mysql.connector
-import os
+import psutil
 
 # Define the absolute paths for each script
 COA_FILLING_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/COA/coa_filling.py"
 AUTO_UPDATE_POLL_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/auto_update_poll.py"
 IMPORT_CSV_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/import_csv_to_db.py"
-LAST_PROCESSED_ROW_FILE = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/last_processed_row.txt"
 
 # Database connection function for the reset button
 def connect_to_database():
@@ -19,21 +18,22 @@ def connect_to_database():
         database='qcdb'
     )
 
-# Function to run auto_update_poll.py
+# Function to check if auto-update is running and run it if not
 def run_auto_update():
-    global auto_update_process
-    if auto_update_process and auto_update_process.poll() is None:
-        messagebox.showinfo("Info", "Auto-update already running.")
-    else:
-        auto_update_process = subprocess.Popen(["python", AUTO_UPDATE_POLL_PATH])
-        messagebox.showinfo("Info", "Auto-update started.")
+    for process in psutil.process_iter(['cmdline']):
+        if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
+            messagebox.showinfo("Info", "Auto-update already running.")
+            return
+    subprocess.Popen(["python", AUTO_UPDATE_POLL_PATH])
+    messagebox.showinfo("Info", "Auto-update started.")
 
-# Function to stop auto_update_poll.py, run import_csv_to_db.py, and then restart auto_update_poll.py
+# Function to stop auto-update, run import_csv_to_db.py, then restart auto-update
 def run_import_csv():
-    global auto_update_process
-    if auto_update_process and auto_update_process.poll() is None:
-        auto_update_process.terminate()
-        auto_update_process.wait()
+    for process in psutil.process_iter(['cmdline']):
+        if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
+            process.terminate()
+            process.wait()
+            break
     subprocess.run(["python", IMPORT_CSV_PATH])
     messagebox.showinfo("Info", "CSV data imported successfully.")
     run_auto_update()
@@ -44,8 +44,14 @@ def run_coa_filling():
     if not lot_number:
         messagebox.showwarning("Warning", "Please enter a lot number.")
         return
-    subprocess.run(["python", COA_FILLING_PATH, lot_number])
-    messagebox.showinfo("Info", f"COA filled for lot number: {lot_number}")
+    try:
+        subprocess.run(["python", COA_FILLING_PATH, lot_number], check=True)
+        messagebox.showinfo("Info", f"COA filled for lot number: {lot_number}")
+    except subprocess.CalledProcessError as e:
+        if "PermissionError" in str(e):
+            messagebox.showerror("Error", "Close the COA file and try again.")
+        else:
+            messagebox.showerror("Error", f"Close the COA file and try again.: {lot_number}")
 
 # Function to reset the database and last_processed_row.txt
 def reset_database():
@@ -80,7 +86,7 @@ def reset_database():
         connection.commit()
 
         # Reset last_processed_row.txt to '0'
-        with open(LAST_PROCESSED_ROW_FILE, "w") as file:
+        with open("last_processed_row.txt", "w") as file:
             file.write("0")
 
         messagebox.showinfo("Info", "Database and last_processed_row.txt reset successfully.")

@@ -58,66 +58,81 @@ def fill_coa(lot_number):
 
     # Fill in general information
     sheet["D12"] = lot_number
-    sheet["D14"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
+    sheet["D15"] = datetime.now().strftime("%Y-%m-%d")  # Inspection date
     sheet["D16"] = qc_data["lot_status"] or "PASS"  # Status from lots table
+    
+    # Additional lot number placement based on product type
+    if qc_data["product"] == "6.0J" or qc_data["product"] == "5.4J":
+        sheet["E36"] = lot_number  # Lot number for 6.0J and 5.4J
+    elif qc_data["product"] == "6.5J":
+        sheet["E38"] = lot_number  # Lot number for 6.5J
 
     # Fill in specific test results and statuses
-    # Adjust fields as per product sheet requirements
-    sheet["E20"] = qc_data["solid_content"]
-    sheet["F20"] = qc_data["solid_content_status"] or "PASS"
+    sheet["E20"] = qc_data.get("solid_content", "N/A")
+    sheet["F20"] = qc_data.get("solid_content_status", "PASS")
     
-    sheet["E21"] = qc_data["cnt_content"]
-    sheet["F21"] = qc_data["cnt_content_status"] or "PASS"
+    sheet["E21"] = qc_data.get("cnt_content", "N/A")
+    sheet["F21"] = qc_data.get("cnt_content_status", "PASS")
     
-    sheet["E22"] = qc_data["viscosity"]
-    sheet["F22"] = qc_data["viscosity_status"] or "PASS"
+    sheet["E22"] = qc_data.get("viscosity", "N/A")
+    sheet["F22"] = qc_data.get("viscosity_status", "PASS")
     
-    sheet["E23"] = qc_data["particle_size"]
-    sheet["F23"] = qc_data["particle_size_status"] or "PASS"
+    sheet["E23"] = qc_data.get("particle_size", "N/A")
+    sheet["F23"] = qc_data.get("particle_size_status", "PASS")
     
     if qc_data["product"] == "5.4J":
-        sheet["E24"] = qc_data["moisture"]
-        sheet["F24"] = qc_data["moisture_status"] or "PASS"
-        sheet["E25"] = qc_data["electrical_resistance"]
-        sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
+        sheet["E24"] = qc_data.get("moisture", "N/A")
+        sheet["F24"] = qc_data.get("moisture_status", "PASS")
+        sheet["E25"] = qc_data.get("electrical_resistance", "N/A")
+        sheet["F25"] = qc_data.get("electrical_resistance_status", "PASS")
 
         icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
         for i, element in enumerate(icp_elements, start=38):
-            value = qc_data[element] if qc_data[element] is not None else "N/A"
+            value = qc_data.get(element, "N/A")
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
+            sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
 
     elif qc_data["product"] == "6.5J":
-        sheet["E24"] = qc_data["electrical_resistance"]
-        sheet["F24"] = qc_data["electrical_resistance_status"] or "PASS"
+        sheet["E24"] = qc_data.get("electrical_resistance", "N/A")
+        sheet["F24"] = qc_data.get("electrical_resistance_status", "PASS")
 
+        # Fill ICP elements from F40 to F47
         icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr"]
         for i, element in enumerate(icp_elements, start=40):
-            value = qc_data[element] if qc_data[element] is not None else "N/A"
+            value = qc_data.get(element, "N/A")
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
+            sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
         
-        sheet["F48"] = qc_data["mag_sum"]
-        sheet["G48"] = qc_data["magnetic_impurity_status"] or "PASS"
+        # Fill only the magnetic impurity sum in F48
+        sheet["F48"] = qc_data.get("mag_sum", "N/A")
+        sheet["G48"] = qc_data.get("magnetic_impurity_status", "PASS")
 
     elif qc_data["product"] == "6.0J":
-        sheet["E24"] = qc_data["moisture"]
-        sheet["F24"] = qc_data["moisture_status"] or "PASS"
-        sheet["E25"] = qc_data["electrical_resistance"]
-        sheet["F25"] = qc_data["electrical_resistance_status"] or "PASS"
+        sheet["E24"] = qc_data.get("moisture", "N/A")
+        sheet["F24"] = qc_data.get("moisture_status", "PASS")
+        sheet["E25"] = qc_data.get("electrical_resistance", "N/A")
+        sheet["F25"] = qc_data.get("electrical_resistance_status", "PASS")
 
         icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr"]
         for i, element in enumerate(icp_elements, start=38):
-            value = qc_data[element] if qc_data[element] is not None else "N/A"
+            value = qc_data.get(element, "N/A")
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data["icp_status"] or "PASS"
+            sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
         
-        sheet["F51"] = qc_data["mag_sum"]
-        sheet["G51"] = qc_data["magnetic_impurity_status"] or "PASS"
+        # Magnetic impurity details for 6.0J
+        magnetic_elements = ["mag_Cr", "mag_Fe", "mag_Ni", "mag_Zn"]
+        for i, element in enumerate(magnetic_elements, start=47):
+            sheet[f"F{i}"] = qc_data.get(element, "N/A")
+
+        sheet["F51"] = qc_data.get("mag_sum", "N/A")
+        sheet["G51"] = qc_data.get("magnetic_impurity_status", "PASS")
 
     # Save the updated COA file
-    workbook.save(output_path)
-    print(f"COA saved for lot number {lot_number} to {output_path}")
+    try:
+        workbook.save(output_path)
+        print(f"COA saved for lot number {lot_number} to {output_path}")
+    except PermissionError as e:
+        print("Error: Close the COA file and try again.")
 
 # Main script logic to handle command-line arguments
 if __name__ == "__main__":
