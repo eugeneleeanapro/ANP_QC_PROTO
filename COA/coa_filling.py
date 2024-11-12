@@ -31,6 +31,7 @@ def fill_coa(lot_number):
         moisture.moisture, moisture.status AS moisture_status,
         electrical_resistance.electrical_resistance, electrical_resistance.status AS electrical_resistance_status,
         magnetic_impurity.magnetic_impurity_sum AS mag_sum, magnetic_impurity.status AS magnetic_impurity_status,
+        magnetic_impurity.mag_Cr, magnetic_impurity.mag_Fe, magnetic_impurity.mag_Ni, magnetic_impurity.mag_Zn,
         icp.Ca, icp.Cr, icp.Cu, icp.Fe, icp.Na, icp.Ni, icp.Zn, icp.Zr, icp.Co, icp.status AS icp_status
     FROM lots
     LEFT JOIN solid_content ON lots.lot_number = solid_content.lot_number
@@ -103,7 +104,7 @@ def fill_coa(lot_number):
             sheet[f"F{i}"] = value
             sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
         
-        # Fill only the magnetic impurity sum in F48
+        # Magnetic impurity sum for 6.5J goes in F51
         sheet["F48"] = qc_data.get("mag_sum", "N/A")
         sheet["G48"] = qc_data.get("magnetic_impurity_status", "PASS")
 
@@ -113,17 +114,19 @@ def fill_coa(lot_number):
         sheet["E25"] = qc_data.get("electrical_resistance", "N/A")
         sheet["F25"] = qc_data.get("electrical_resistance_status", "PASS")
 
-        icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr"]
+        icp_elements = ["Ca", "Cr", "Cu", "Fe", "Na", "Ni", "Zn", "Zr", "Co"]
         for i, element in enumerate(icp_elements, start=38):
             value = qc_data.get(element, "N/A")
             sheet[f"F{i}"] = value
-            sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
+            if element != "Co":  # Do not include status for "Co"
+                sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
         
-        # Magnetic impurity details for 6.0J
+        # Magnetic impurity details for 6.0J (Cr, Fe, Ni, Zn and sum)
         magnetic_elements = ["mag_Cr", "mag_Fe", "mag_Ni", "mag_Zn"]
         for i, element in enumerate(magnetic_elements, start=47):
             sheet[f"F{i}"] = qc_data.get(element, "N/A")
 
+        # Magnetic impurity sum for 6.0J
         sheet["F51"] = qc_data.get("mag_sum", "N/A")
         sheet["G51"] = qc_data.get("magnetic_impurity_status", "PASS")
 
