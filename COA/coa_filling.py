@@ -9,12 +9,16 @@ output_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/COA - Copy
 
 # Function to connect to the database
 def connect_to_database():
-    return mysql.connector.connect(
-        host='localhost',
-        user='root',
-        password='mysql',
-        database='qcdb'
-    )
+    try:
+        return mysql.connector.connect(
+            host='localhost',
+            user='root',
+            password='mysql',
+            database='qcdb'
+        )
+    except mysql.connector.Error as err:
+        print(f"Database connection error: {err}")
+        sys.exit(1)
 
 # Main function to fill COA
 def fill_coa(lot_number):
@@ -54,8 +58,15 @@ def fill_coa(lot_number):
         return
 
     # Load the appropriate sheet from the COA template based on product
-    workbook = load_workbook(template_path)
-    sheet = workbook[qc_data["product"]]  # Select sheet by product name ("6.0J", "6.5J", or "5.4J")
+    try:
+        workbook = load_workbook(template_path)
+        sheet = workbook[qc_data["product"]]  # Select sheet by product name ("6.0J", "6.5J", or "5.4J")
+    except KeyError:
+        print(f"Error: Product sheet '{qc_data['product']}' not found in COA template.")
+        return
+    except FileNotFoundError:
+        print("Error: COA template file not found.")
+        return
 
     # Fill in general information
     sheet["D12"] = lot_number
@@ -68,7 +79,7 @@ def fill_coa(lot_number):
     elif qc_data["product"] == "6.5J":
         sheet["E38"] = lot_number  # Lot number for 6.5J
 
-    # Fill in specific test results and statuses
+    # Fill in specific test results and statuses, with "PASS" as default if data is missing
     sheet["E20"] = qc_data.get("solid_content", "N/A")
     sheet["F20"] = qc_data.get("solid_content_status", "PASS")
     
@@ -104,7 +115,7 @@ def fill_coa(lot_number):
             sheet[f"F{i}"] = value
             sheet[f"G{i}"] = qc_data.get("icp_status", "PASS")
         
-        # Magnetic impurity sum for 6.5J goes in F51
+        # Magnetic impurity sum for 6.5J should be in F48 and status in G48
         sheet["F48"] = qc_data.get("mag_sum", "N/A")
         sheet["G48"] = qc_data.get("magnetic_impurity_status", "PASS")
 
@@ -134,7 +145,7 @@ def fill_coa(lot_number):
     try:
         workbook.save(output_path)
         print(f"COA saved for lot number {lot_number} to {output_path}")
-    except PermissionError as e:
+    except PermissionError:
         print("Error: Close the COA file and try again.")
 
 # Main script logic to handle command-line arguments

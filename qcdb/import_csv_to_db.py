@@ -1,9 +1,5 @@
 import csv
 import mysql.connector
-import os
-
-# Path to the file storing the last processed row
-last_processed_row_file = 'last_processed_row.txt'
 
 # Database connection function
 def connect_to_database():
@@ -19,19 +15,7 @@ def connect_to_database():
         print(f"Error connecting to the database: {err}")
         return None
 
-# Load the last processed row from a file
-def load_last_processed_row():
-    if os.path.exists(last_processed_row_file):
-        with open(last_processed_row_file, 'r') as file:
-            return int(file.read().strip())
-    return 0
-
-# Save the last processed row to a file
-def save_last_processed_row(row_number):
-    with open(last_processed_row_file, 'w') as file:
-        file.write(str(row_number))
-
-# Product specifications
+# Product specifications dictionary
 specifications = {
     "5.4J": {
         "Solid Content (%)": (5.3, 5.6),
@@ -104,19 +88,21 @@ def check_individual_specifications(product_name, param, value):
 
 # Function to check for existing `lot_number` and `product` entry or insert/update as needed
 def check_or_insert_lot(cursor, lot_number, product):
-    cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
+    cursor.execute("SELECT processed FROM lots WHERE lot_number = %s", (lot_number,))
     result = cursor.fetchone()
     
     if result:
+        if result[0]:  # If `processed` is True, skip this lot
+            print(f"Skipping already processed lot number: {lot_number}")
+            return False
         cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
     else:
-        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
+        cursor.execute("INSERT INTO lots (lot_number, product, production_date, processed) VALUES (%s, %s, CURDATE(), FALSE)", (lot_number, product))
+    return True
 
 # Main function to import the CSV file and update the database
 def import_csv_to_db(csv_file_path):
     print("Starting CSV data import...")
-
-    last_processed_row = load_last_processed_row()
 
     connection = connect_to_database()
     if not connection:
@@ -129,13 +115,9 @@ def import_csv_to_db(csv_file_path):
         with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
             reader = list(csv.reader(file))
             headers = reader[0]  # skip header
-            new_rows = reader[last_processed_row + 1:]  # Start from the last unprocessed row
+            new_rows = reader[1:]  # Start from the second row, excluding header
 
-            if not new_rows:
-                print("No new rows to process.")
-                return
-
-            for index, row in enumerate(new_rows, start=last_processed_row + 1):
+            for row in new_rows:
                 if len(row) < 24:
                     print(f"Skipping incomplete row: {row}")
                     continue
@@ -167,8 +149,10 @@ def import_csv_to_db(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                check_or_insert_lot(cursor, lot_number, product)
-                
+                # Skip row if it's already processed
+                if not check_or_insert_lot(cursor, lot_number, product):
+                    continue
+
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
 
                 try:
@@ -182,10 +166,9 @@ def import_csv_to_db(csv_file_path):
                     cursor.execute("INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE magnetic_impurity_sum = VALUES(magnetic_impurity_sum), status = %s", (lot_number, statuses["Magnetic Impurity (ppb)"], magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn, statuses["Magnetic Impurity (ppb)"]))
                     cursor.execute("INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE Sn = VALUES(Sn), Si = VALUES(Si), Ca = VALUES(Ca), Cr = VALUES(Cr), Cu = VALUES(Cu), Zr = VALUES(Zr), Fe = VALUES(Fe), Na = VALUES(Na), Ni = VALUES(Ni), Zn = VALUES(Zn), Co = VALUES(Co)", (lot_number, statuses["CNT Content (%)"], *icp_values))
 
-                    # Update last_processed_row after each successful row
+                    # Mark as processed
+                    cursor.execute("UPDATE lots SET processed = TRUE WHERE lot_number = %s", (lot_number,))
                     connection.commit()
-                    last_processed_row = index
-                    save_last_processed_row(last_processed_row)
 
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")

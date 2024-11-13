@@ -1,12 +1,7 @@
 import csv
 import mysql.connector
 import time
-import os
 from datetime import datetime, timedelta
-
-# Initialize last_processed_row as a global variable
-last_processed_row = 0
-last_processed_row_file = 'last_processed_row.txt'
 
 # Database connection function
 def connect_to_database():
@@ -22,20 +17,7 @@ def connect_to_database():
         print(f"Error connecting to the database: {err}")
         return None
 
-# Load the last processed row from a file
-def load_last_processed_row():
-    global last_processed_row
-    if os.path.exists(last_processed_row_file):
-        with open(last_processed_row_file, 'r') as file:
-            last_processed_row = int(file.read().strip())
-    return last_processed_row
-
-# Save the last processed row to a file
-def save_last_processed_row(row_number):
-    with open(last_processed_row_file, 'w') as file:
-        file.write(str(row_number))
-
-# Product specifications
+# Product specifications dictionary
 specifications = {
     "5.4J": {
         "Solid Content (%)": (5.3, 5.6),
@@ -93,42 +75,35 @@ def check_individual_specifications(product_name, param, value):
         min_val, max_val = specs[param]
         return "PASS" if min_val <= value <= max_val else "FAIL"
     elif param == "Viscosity (cP)":
-        max_val = specs["Viscosity (cP)"]
-        return "PASS" if value <= max_val else "FAIL"
+        return "PASS" if value <= specs["Viscosity (cP)"] else "FAIL"
     elif param == "Particle Size (μm)":
-        max_val = specs["Particle Size (μm)"]
-        return "PASS" if value < max_val else "FAIL"
+        return "PASS" if value < specs["Particle Size (μm)"] else "FAIL"
     elif param == "Moisture (ppm)":
-        max_val = specs.get("Moisture (ppm)", float('inf'))
-        return "PASS" if value <= max_val else "FAIL"
+        return "PASS" if value <= specs.get("Moisture (ppm)", float('inf')) else "FAIL"
     elif param == "Electrode Resistance (Ω-cm)":
-        max_val = specs["Electrode Resistance (Ω-cm)"]
-        return "PASS" if value <= max_val else "FAIL"
+        return "PASS" if value <= specs["Electrode Resistance (Ω-cm)"] else "FAIL"
     elif param in specs["Impurities"]:
-        max_val = specs["Impurities"][param]
-        return "PASS" if value <= max_val else "FAIL"
+        return "PASS" if value <= specs["Impurities"][param] else "FAIL"
     elif param == "Magnetic Impurity (ppb)":
-        max_val = specs.get("Magnetic Impurity (ppb)", float('inf'))
-        return "PASS" if value <= max_val else "FAIL"
-    else:
-        return "FAIL"
+        return "PASS" if value <= specs.get("Magnetic Impurity (ppb)", float('inf')) else "FAIL"
+    return "FAIL"
 
-# Function to check for existing `lot_number` and `product` entry or insert/update as needed
+# Function to check or insert lot and mark as processed if already processed
 def check_or_insert_lot(cursor, lot_number, product):
-    cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
+    cursor.execute("SELECT processed FROM lots WHERE lot_number = %s", (lot_number,))
     result = cursor.fetchone()
     
     if result:
+        if result[0]:  # If `processed` is True, skip this lot
+            print(f"Skipping already processed lot number: {lot_number}")
+            return False
         cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
-        return True
     else:
-        cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-        return True
+        cursor.execute("INSERT INTO lots (lot_number, product, production_date, processed) VALUES (%s, %s, CURDATE(), FALSE)", (lot_number, product))
+    return True
 
-# Main update function
+# Function to update the database from CSV data
 def update_database_from_csv(csv_file_path):
-    global last_processed_row
-    last_processed_row = load_last_processed_row()
     print("Checking for new data to update...")
 
     connection = connect_to_database()
@@ -140,17 +115,10 @@ def update_database_from_csv(csv_file_path):
 
     try:
         with open(csv_file_path, 'r', encoding='utf-8-sig') as file:
-            contents = list(csv.reader(file))
-            headers = contents[0]
-            new_rows = contents[last_processed_row + 1:]
+            reader = csv.reader(file)
+            headers = next(reader)  # skip header
 
-            if not new_rows:
-                print("No new rows to process.")
-                return
-
-            print(f"Found {len(new_rows)} new rows to process.")
-
-            for index, row in enumerate(new_rows, start=last_processed_row + 1):
+            for row in reader:
                 if len(row) < 24:
                     print(f"Skipping incomplete row: {row}")
                     continue
@@ -182,11 +150,14 @@ def update_database_from_csv(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                check_or_insert_lot(cursor, lot_number, product)
-                
+                # Skip row if already processed
+                if not check_or_insert_lot(cursor, lot_number, product):
+                    continue
+
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
 
                 try:
+                    # Insert or update each parameter
                     cursor.execute("INSERT INTO solid_content (lot_number, status, solid_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE solid_content = VALUES(solid_content), status = %s", (lot_number, statuses["Solid Content (%)"], solid_content_value, statuses["Solid Content (%)"]))
                     cursor.execute("INSERT INTO cnt_content (lot_number, status, cnt_content) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE cnt_content = VALUES(cnt_content), status = %s", (lot_number, statuses["CNT Content (%)"], cnt_content_value, statuses["CNT Content (%)"]))
                     cursor.execute("INSERT INTO particle_size (lot_number, status, particle_size) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE particle_size = VALUES(particle_size), status = %s", (lot_number, statuses["Particle Size (μm)"], particle_size_value, statuses["Particle Size (μm)"]))
@@ -196,23 +167,21 @@ def update_database_from_csv(csv_file_path):
                     cursor.execute("INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE magnetic_impurity_sum = VALUES(magnetic_impurity_sum), status = %s", (lot_number, statuses["Magnetic Impurity (ppb)"], magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn, statuses["Magnetic Impurity (ppb)"]))
                     cursor.execute("INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE Sn = VALUES(Sn), Si = VALUES(Si), Ca = VALUES(Ca), Cr = VALUES(Cr), Cu = VALUES(Cu), Zr = VALUES(Zr), Fe = VALUES(Fe), Na = VALUES(Na), Ni = VALUES(Ni), Zn = VALUES(Zn), Co = VALUES(Co)", (lot_number, statuses["CNT Content (%)"], *icp_values))
 
+                    # Mark the lot as processed
+                    cursor.execute("UPDATE lots SET processed = TRUE WHERE lot_number = %s", (lot_number,))
+                    connection.commit()
+
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
                     connection.rollback()
-                    continue  # Skip to the next row if there's an error in this row
-
-                # Update last_processed_row after each row is successfully processed
-                last_processed_row = index
-                save_last_processed_row(last_processed_row)
 
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
-        connection.commit()
         connection.close()
         print("Database update completed.")
 
-# Polling loop
+# Polling loop to run every hour
 def poll_for_changes_every_hour(csv_file_path):
     while True:
         try:
