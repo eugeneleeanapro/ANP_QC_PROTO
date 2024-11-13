@@ -9,7 +9,7 @@ COA_FILLING_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/Git
 AUTO_UPDATE_POLL_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/auto_update_poll.py"
 IMPORT_CSV_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/import_csv_to_db.py"
 
-# Database connection function for the reset button
+# Database connection function for validation
 def connect_to_database():
     return mysql.connector.connect(
         host='localhost',
@@ -18,11 +18,20 @@ def connect_to_database():
         database='qcdb'
     )
 
+# Validate if the entered lot number exists in the database
+def validate_lot_number(lot_number):
+    connection = connect_to_database()
+    cursor = connection.cursor()
+    cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
+    result = cursor.fetchone()
+    connection.close()
+    return result is not None
+
 # Function to check if auto-update is running and run it if not
 def run_auto_update():
     for process in psutil.process_iter(['cmdline']):
         if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
-            messagebox.showinfo("Info", "Auto-update already running.")
+            messagebox.showinfo("Info", "Auto-update is already running.")
             return
     subprocess.Popen(["python", AUTO_UPDATE_POLL_PATH])
     messagebox.showinfo("Info", "Auto-update started.")
@@ -44,14 +53,22 @@ def run_coa_filling():
     if not lot_number:
         messagebox.showwarning("Warning", "Please enter a lot number.")
         return
+    
+    # Validate lot number existence
+    if not validate_lot_number(lot_number):
+        messagebox.showerror("Error", "Enter correct Lot number.")
+        return
+
     try:
         subprocess.run(["python", COA_FILLING_PATH, lot_number], check=True)
         messagebox.showinfo("Info", f"COA filled for lot number: {lot_number}")
+    
     except subprocess.CalledProcessError as e:
+        # Handle PermissionError specifically
         if "PermissionError" in str(e):
             messagebox.showerror("Error", "Close the COA file and try again.")
         else:
-            messagebox.showerror("Error", f"Close the COA file and try again.: {lot_number}")
+            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
 
 # Function to reset the database and last_processed_row.txt
 def reset_database():
@@ -99,9 +116,6 @@ def reset_database():
 root = tk.Tk()
 root.title("QC Database GUI")
 root.geometry("400x300")
-
-# Initialize auto-update process variable
-auto_update_process = None
 
 # Buttons and their commands
 auto_update_button = tk.Button(root, text="Run Auto Update Hourly", command=run_auto_update)
