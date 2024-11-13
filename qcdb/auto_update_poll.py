@@ -4,7 +4,7 @@ import time
 import os
 from datetime import datetime, timedelta
 
-# Initialize last_processed_row as a global variable at the beginning
+# Initialize last_processed_row as a global variable
 last_processed_row = 0
 last_processed_row_file = 'last_processed_row.txt'
 
@@ -83,68 +83,46 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
-# Check individual parameter specifications with debug output
+# Check individual parameter specifications
 def check_individual_specifications(product_name, param, value):
     specs = specifications.get(product_name)
     if not specs or value is None:
-        print(f"No specifications found for {product_name} or value is None for {param}.")
         return "FAIL"
-
-    print(f"Checking {param} for product {product_name} with value {value}")
 
     if param in ["Solid Content (%)", "CNT Content (%)"]:
         min_val, max_val = specs[param]
-        result = "PASS" if min_val <= value <= max_val else "FAIL"
-        print(f"Expected range: {min_val} to {max_val}, Result: {result}")
-        return result
+        return "PASS" if min_val <= value <= max_val else "FAIL"
     elif param == "Viscosity (cP)":
         max_val = specs["Viscosity (cP)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= max_val else "FAIL"
     elif param == "Particle Size (μm)":
         max_val = specs["Particle Size (μm)"]
-        result = "PASS" if value < max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value < max_val else "FAIL"
     elif param == "Moisture (ppm)":
         max_val = specs.get("Moisture (ppm)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= max_val else "FAIL"
     elif param == "Electrode Resistance (Ω-cm)":
         max_val = specs["Electrode Resistance (Ω-cm)"]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= max_val else "FAIL"
     elif param in specs["Impurities"]:
         max_val = specs["Impurities"][param]
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max for {param}: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= max_val else "FAIL"
     elif param == "Magnetic Impurity (ppb)":
         max_val = specs.get("Magnetic Impurity (ppb)", float('inf'))
-        result = "PASS" if value <= max_val else "FAIL"
-        print(f"Expected max: {max_val}, Result: {result}")
-        return result
+        return "PASS" if value <= max_val else "FAIL"
     else:
-        print(f"No specification rule matched for {param}.")
         return "FAIL"
 
 # Function to check for existing `lot_number` and `product` entry or insert/update as needed
 def check_or_insert_lot(cursor, lot_number, product):
-    cursor.execute("SELECT lot_number, product FROM lots WHERE lot_number = %s", (lot_number,))
+    cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
     result = cursor.fetchone()
     
     if result:
-        # Lot already exists; we just update the production_date
         cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
-        print(f"Updated production_date for existing lot_number {lot_number} with product {product}.")
         return True
     else:
-        # Insert new lot
         cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-        print(f"Inserted new lot_number {lot_number} with product {product} into lots table.")
         return True
 
 # Main update function
@@ -204,7 +182,6 @@ def update_database_from_csv(csv_file_path):
                     "Magnetic Impurity (ppb)": magnetic_impurity_sum
                 }
 
-                # Only proceed if `lot_number` is confirmed or newly inserted
                 check_or_insert_lot(cursor, lot_number, product)
                 
                 statuses = {param: check_individual_specifications(product, param, value) for param, value in test_data.items()}
@@ -221,15 +198,18 @@ def update_database_from_csv(csv_file_path):
 
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
+                    connection.rollback()
+                    continue  # Skip to the next row if there's an error in this row
 
+                # Update last_processed_row after each row is successfully processed
                 last_processed_row = index
+                save_last_processed_row(last_processed_row)
 
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
         connection.commit()
         connection.close()
-        save_last_processed_row(last_processed_row)
         print("Database update completed.")
 
 # Polling loop

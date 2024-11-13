@@ -79,14 +79,11 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
-# Check individual parameter specifications with debug output
+# Check individual parameter specifications
 def check_individual_specifications(product_name, param, value):
     specs = specifications.get(product_name)
     if not specs or value is None:
-        print(f"No specifications found for {product_name} or value is None for {param}.")
         return "FAIL"
-
-    print(f"Checking {param} for product {product_name} with value {value}")
 
     if param in ["Solid Content (%)", "CNT Content (%)"]:
         min_val, max_val = specs[param]
@@ -112,10 +109,8 @@ def check_or_insert_lot(cursor, lot_number, product):
     
     if result:
         cursor.execute("UPDATE lots SET production_date = CURDATE() WHERE lot_number = %s", (lot_number,))
-        print(f"Updated production_date for existing lot_number {lot_number}.")
     else:
         cursor.execute("INSERT INTO lots (lot_number, product, production_date) VALUES (%s, %s, CURDATE())", (lot_number, product))
-        print(f"Inserted new lot_number {lot_number} with product {product} into lots table.")
 
 # Main function to import the CSV file and update the database
 def import_csv_to_db(csv_file_path):
@@ -140,7 +135,7 @@ def import_csv_to_db(csv_file_path):
                 print("No new rows to process.")
                 return
 
-            for row in new_rows:
+            for index, row in enumerate(new_rows, start=last_processed_row + 1):
                 if len(row) < 24:
                     print(f"Skipping incomplete row: {row}")
                     continue
@@ -187,17 +182,19 @@ def import_csv_to_db(csv_file_path):
                     cursor.execute("INSERT INTO magnetic_impurity (lot_number, status, magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE magnetic_impurity_sum = VALUES(magnetic_impurity_sum), status = %s", (lot_number, statuses["Magnetic Impurity (ppb)"], magnetic_impurity_sum, mag_Cr, mag_Fe, mag_Ni, mag_Zn, statuses["Magnetic Impurity (ppb)"]))
                     cursor.execute("INSERT INTO icp (lot_number, status, Sn, Si, Ca, Cr, Cu, Zr, Fe, Na, Ni, Zn, Co) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE Sn = VALUES(Sn), Si = VALUES(Si), Ca = VALUES(Ca), Cr = VALUES(Cr), Cu = VALUES(Cu), Zr = VALUES(Zr), Fe = VALUES(Fe), Na = VALUES(Na), Ni = VALUES(Ni), Zn = VALUES(Zn), Co = VALUES(Co)", (lot_number, statuses["CNT Content (%)"], *icp_values))
 
+                    # Update last_processed_row after each successful row
+                    connection.commit()
+                    last_processed_row = index
+                    save_last_processed_row(last_processed_row)
+
                 except mysql.connector.Error as err:
                     print(f"Error inserting data for lot_number {lot_number}: {err}")
-
-                last_processed_row += 1
+                    connection.rollback()
 
     except Exception as e:
         print(f"Error processing CSV file: {e}")
     finally:
-        connection.commit()
         connection.close()
-        save_last_processed_row(last_processed_row)
         print("Database update completed.")
 
 # Specify the CSV file path and execute

@@ -11,16 +11,25 @@ IMPORT_CSV_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitH
 
 # Database connection function for validation
 def connect_to_database():
-    return mysql.connector.connect(
-        host='localhost',
-        user='root',
-        password='mysql',
-        database='qcdb'
-    )
+    try:
+        connection = mysql.connector.connect(
+            host='localhost',
+            user='root',
+            password='mysql',
+            database='qcdb'
+        )
+        return connection
+    except mysql.connector.Error as err:
+        print(f"Error connecting to the database: {err}")
+        return None
 
 # Validate if the entered lot number exists in the database
 def validate_lot_number(lot_number):
     connection = connect_to_database()
+    if not connection:
+        messagebox.showerror("Error", "Database connection failed.")
+        return False
+
     cursor = connection.cursor()
     cursor.execute("SELECT lot_number FROM lots WHERE lot_number = %s", (lot_number,))
     result = cursor.fetchone()
@@ -29,22 +38,30 @@ def validate_lot_number(lot_number):
 
 # Function to check if auto-update is running and run it if not
 def run_auto_update():
-    for process in psutil.process_iter(['cmdline']):
-        if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
-            messagebox.showinfo("Info", "Auto-update is already running.")
-            return
+    if any(p.info['cmdline'] and "auto_update_poll.py" in p.info['cmdline'] for p in psutil.process_iter(['cmdline'])):
+        messagebox.showinfo("Info", "Auto-update is already running.")
+        return
+
     subprocess.Popen(["python", AUTO_UPDATE_POLL_PATH])
     messagebox.showinfo("Info", "Auto-update started.")
 
 # Function to stop auto-update, run import_csv_to_db.py, then restart auto-update
 def run_import_csv():
+    # Stop auto-update if running
     for process in psutil.process_iter(['cmdline']):
         if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
             process.terminate()
-            process.wait()
+            process.wait()  # Ensure the process has terminated before continuing
             break
-    subprocess.run(["python", IMPORT_CSV_PATH])
-    messagebox.showinfo("Info", "CSV data imported successfully.")
+
+    # Run import_csv_to_db.py
+    result = subprocess.run(["python", IMPORT_CSV_PATH], capture_output=True, text=True)
+    if result.returncode == 0:
+        messagebox.showinfo("Info", "CSV data imported successfully.")
+    else:
+        messagebox.showerror("Error", f"CSV import failed:\n{result.stderr}")
+
+    # Restart auto-update
     run_auto_update()
 
 # Function to run coa_filling.py with the provided lot number
@@ -53,20 +70,18 @@ def run_coa_filling():
     if not lot_number:
         messagebox.showwarning("Warning", "Please enter a lot number.")
         return
-    
+
     # Validate lot number existence
     if not validate_lot_number(lot_number):
-        messagebox.showerror("Error", "Enter correct Lot number.")
+        messagebox.showerror("Error", "Invalid lot number. Please enter a correct lot number.")
         return
 
     try:
         subprocess.run(["python", COA_FILLING_PATH, lot_number], check=True)
         messagebox.showinfo("Info", f"COA filled for lot number: {lot_number}")
-    
     except subprocess.CalledProcessError as e:
-        # Handle PermissionError specifically
         if "PermissionError" in str(e):
-            messagebox.showerror("Error", "Close the COA file and try again.")
+            messagebox.showerror("Error", "Please close the COA file and try again.")
         else:
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
 
@@ -74,6 +89,10 @@ def run_coa_filling():
 def reset_database():
     try:
         connection = connect_to_database()
+        if not connection:
+            messagebox.showerror("Error", "Database connection failed.")
+            return
+
         cursor = connection.cursor()
         reset_commands = """
         SET FOREIGN_KEY_CHECKS = 0;
@@ -110,7 +129,8 @@ def reset_database():
     except mysql.connector.Error as err:
         messagebox.showerror("Error", f"Database reset failed: {err}")
     finally:
-        connection.close()
+        if connection.is_connected():
+            connection.close()
 
 # GUI setup
 root = tk.Tk()
