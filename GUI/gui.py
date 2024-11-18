@@ -3,6 +3,7 @@ from tkinter import messagebox
 import subprocess
 import mysql.connector
 import psutil
+import sys
 
 # Define the absolute paths for each script
 COA_FILLING_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/COA/coa_filling.py"
@@ -20,14 +21,13 @@ def connect_to_database():
         )
         return connection
     except mysql.connector.Error as err:
-        print(f"Error connecting to the database: {err}")
+        messagebox.showerror("Error", f"Database connection failed: {err}")
         return None
 
 # Validate if the entered lot number exists in the database
 def validate_lot_number(lot_number):
     connection = connect_to_database()
     if not connection:
-        messagebox.showerror("Error", "Database connection failed.")
         return False
 
     cursor = connection.cursor()
@@ -38,31 +38,47 @@ def validate_lot_number(lot_number):
 
 # Function to check if auto-update is running and run it if not
 def run_auto_update():
-    if any(p.info['cmdline'] and "auto_update_poll.py" in p.info['cmdline'] for p in psutil.process_iter(['cmdline'])):
-        messagebox.showinfo("Info", "Auto-update is already running.")
-        return
+    for process in psutil.process_iter(['cmdline']):
+        if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
+            messagebox.showinfo("Info", "Auto-update is already running.")
+            return
 
-    subprocess.Popen(["python", AUTO_UPDATE_POLL_PATH])
-    messagebox.showinfo("Info", "Auto-update started.")
+    try:
+        subprocess.Popen([sys.executable, AUTO_UPDATE_POLL_PATH], shell=True)
+        messagebox.showinfo("Info", "Auto-update started successfully.")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to start auto-update: {e}")
 
 # Function to stop auto-update, run import_csv_to_db.py, then restart auto-update
 def run_import_csv():
-    # Stop auto-update if running
-    for process in psutil.process_iter(['cmdline']):
-        if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
-            process.terminate()
-            process.wait()  # Ensure the process has terminated before continuing
-            break
+    try:
+        # Stop auto-update if running
+        for process in psutil.process_iter(['cmdline']):
+            if process.info['cmdline'] and "auto_update_poll.py" in process.info['cmdline']:
+                process.terminate()
+                process.wait()
+                break
 
-    # Run import_csv_to_db.py
-    result = subprocess.run(["python", IMPORT_CSV_PATH], capture_output=True, text=True)
-    if result.returncode == 0:
-        messagebox.showinfo("Info", "CSV data imported successfully.")
-    else:
-        messagebox.showerror("Error", f"CSV import failed:\n{result.stderr}")
+        # Run import_csv_to_db.py
+        result = subprocess.run(
+            [sys.executable, IMPORT_CSV_PATH],
+            capture_output=True,
+            text=True
+        )
 
-    # Restart auto-update
-    run_auto_update()
+        if result.returncode == 0:
+            messagebox.showinfo("Info", "CSV data imported successfully.")
+            print("Import CSV Output:\n", result.stdout)
+        else:
+            messagebox.showerror("Error", f"CSV import failed:\n{result.stderr}")
+            print("Import CSV Error:\n", result.stderr)
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to import CSV: {e}")
+        print(f"Exception during CSV import: {e}")
+
+    finally:
+        run_auto_update()
 
 # Function to run coa_filling.py with the provided lot number
 def run_coa_filling():
@@ -71,26 +87,26 @@ def run_coa_filling():
         messagebox.showwarning("Warning", "Please enter a lot number.")
         return
 
-    # Validate lot number existence
     if not validate_lot_number(lot_number):
         messagebox.showerror("Error", "Invalid lot number. Please enter a correct lot number.")
         return
 
     try:
-        subprocess.run(["python", COA_FILLING_PATH, lot_number], check=True)
+        subprocess.run([sys.executable, COA_FILLING_PATH, lot_number], check=True, shell=True)
         messagebox.showinfo("Info", f"COA filled for lot number: {lot_number}")
     except subprocess.CalledProcessError as e:
         if "PermissionError" in str(e):
             messagebox.showerror("Error", "Please close the COA file and try again.")
         else:
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to fill COA: {e}")
 
 # Function to reset the database and last_processed_row.txt
 def reset_database():
     try:
         connection = connect_to_database()
         if not connection:
-            messagebox.showerror("Error", "Database connection failed.")
             return
 
         cursor = connection.cursor()
@@ -121,15 +137,16 @@ def reset_database():
                 cursor.execute(command)
         connection.commit()
 
-        # Reset last_processed_row.txt to '0'
         with open("last_processed_row.txt", "w") as file:
             file.write("0")
 
         messagebox.showinfo("Info", "Database and last_processed_row.txt reset successfully.")
     except mysql.connector.Error as err:
         messagebox.showerror("Error", f"Database reset failed: {err}")
+    except Exception as e:
+        messagebox.showerror("Error", f"An unexpected error occurred: {e}")
     finally:
-        if connection.is_connected():
+        if connection and connection.is_connected():
             connection.close()
 
 # GUI setup
@@ -141,8 +158,8 @@ root.geometry("400x300")
 auto_update_button = tk.Button(root, text="Run Auto Update Hourly", command=run_auto_update)
 auto_update_button.pack(pady=10)
 
-import_csv_button = tk.Button(root, text="Import CSV Now", command=run_import_csv)
-import_csv_button.pack(pady=10)
+# import_csv_button = tk.Button(root, text="Import CSV Now", command=run_import_csv)
+# import_csv_button.pack(pady=10)
 
 coa_button = tk.Button(root, text="Generate COA", command=run_coa_filling)
 coa_button.pack(pady=10)
@@ -153,7 +170,6 @@ lot_number_label.pack()
 lot_number_entry = tk.Entry(root)
 lot_number_entry.pack(pady=5)
 
-# Database reset button
 reset_button = tk.Button(root, text="Reset Database", command=reset_database)
 reset_button.pack(pady=20)
 
