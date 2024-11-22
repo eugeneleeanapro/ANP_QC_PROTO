@@ -174,5 +174,5 @@ def import_csv_to_db(csv_file_path):
         print("Database update completed.")
 
 # Specify the CSV file path and execute
-csv_file_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/QC_CSV.csv"
+csv_file_path = 'C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Desktop/ERP/QC_mastersheet_csv.csv'
 import_csv_to_db(csv_file_path)

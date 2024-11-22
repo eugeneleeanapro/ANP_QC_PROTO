@@ -6,9 +6,12 @@ import psutil
 import sys
 
 # Define the absolute paths for each script
-COA_FILLING_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/COA/coa_filling.py"
-AUTO_UPDATE_POLL_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/auto_update_poll.py"
-IMPORT_CSV_PATH = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/import_csv_to_db.py"
+COA_FILLING_PATH = "C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC/ANP_QC_PROTO/COA/coa_filling.py"  
+#"C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/COA/coa_filling.py"
+AUTO_UPDATE_POLL_PATH = "C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC/ANP_QC_PROTO/qcdb/auto_update_poll.py"
+#"C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/auto_update_poll.py"
+IMPORT_CSV_PATH = "C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC/ANP_QC_PROTO/qcdb/import_csv_to_db.py"
+#"C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/ANP_QC_PROTO/qcdb/import_csv_to_db.py"
 
 # Database connection function for validation
 def connect_to_database():
@@ -101,6 +104,8 @@ def run_coa_filling():
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
     except Exception as e:
         messagebox.showerror("Error", f"Failed to fill COA: {e}")
+    finally:
+        run_auto_update()
 
 # Function to reset the database and last_processed_row.txt
 def reset_database():
@@ -148,6 +153,8 @@ def reset_database():
     finally:
         if connection and connection.is_connected():
             connection.close()
+            
+        run_auto_update()
 
 # GUI setup
 root = tk.Tk()

@@ -4,8 +4,8 @@ from openpyxl import load_workbook
 from datetime import datetime
 
 # Paths for COA template and output
-template_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/COA.xlsx"
-output_path = "C:/Users/EugeneLee/OneDrive - ANP ENERTECH INC/Desktop/COA - Copy.xlsx"
+template_path = "C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Documents/GitHub/COA_template.xlsx"
+output_path = "C:/Users/GilbertYoon/OneDrive - ANP ENERTECH INC/Desktop/ERP/COA.xlsx"
 
 # Function to connect to the database
 def connect_to_database():
